@@ -1,58 +1,67 @@
-# KeyJam · 打字即作曲
+# KeyJam · 笔记本就是吉他
 
-把键盘变成乐器 —— **你不可能弹错**。
+把笔记本变成一把「自动挡吉他」—— **键盘就是扫弦**。
 
-随便敲字母键就能出旋律:每个音都被锁进 C 大调五声音阶、吸附到 16 分音符,背景跑着 lo-fi 和弦与鼓点,所以**乱敲也不跑调、不脱拍**。目标是把做音乐的门槛降到最低:你只要有审美,就能慢慢做出自己的曲子。
+载入一首你自己拥有的歌,系统自动按小节把它切段,你**每按一下键 = 弹出一段**,用敲击的节奏去"演奏"这首歌的律动。可选**去人声**得到伴奏轨,方便跟唱。
 
-一把「自动挡吉他 + 卡拉OK」:选一首想唱的歌,系统给出和弦谱,你**单键扫弦**(空格/任意字母键/点扫弦钮),每扫一下前进一个和弦、永远弹出正确的和弦,跟着歌词边弹边唱。
+> 完整产品需求见 [docs/PRD.md](docs/PRD.md);开发规范见 [CLAUDE.md](CLAUDE.md)。
 
 ## 运行
-需要 Node 18+(自带 `fetch`)。运行本身**无第三方依赖**(devDependencies 仅供 lint/format)。
+
+需要 Node 18+(自带 `fetch`)。**运行无第三方依赖**(devDependencies 仅供 lint/format)。
 
 ```bash
-cp .env.example .env      # 然后在 .env 里填 DEEPSEEK_API_KEY
-npm start                 # = node server.js,打开 http://localhost:3000
+npm start          # = node server.js,打开 http://localhost:3000
+npm run dev        # node --watch,改完自动重启
 ```
 
-也可以不写 `.env`,临时用环境变量:`DEEPSEEK_API_KEY=sk-xxx npm start`。
-不设 key 也能跑——只是 AI 导入不可用,默认精校曲《小星星》照常弹唱。
-
-开发时用 `npm run dev`(`node --watch`,改完自动重启)。
+音频段模式**不需要任何 API key**;`.env` / DeepSeek 仅供仓库里闲置的"和弦实验接口",可忽略。
 
 ## 玩法
-- 点击开始 → 跟着高亮的和弦,按 **空格** 扫弦,开口唱
-- 输入框打歌名 → **AI 生成和弦**(后端转发 DeepSeek)→ 自动载入新歌
+
+1. 点击开始 → **载入音频**(上传 / 拖入)或点 **示例曲**
+2. 立体声文件可开 **「去人声」**(中置消除,得到粗略伴奏)
+3. **按空格 / 任意字母键 / 点 SPACE 键帽** → 每下弹一段;`BPM ±` 微调切段,`SEG` 看进度
 
 ## 技术
-- 前端:单文件 `index.html` + [Tone.js](https://tonejs.github.io/)(CDN);通用和弦解析器(任意和弦名→音);Canvas 极光 + 扫弦辉光
-- 后端:`server.js` 零依赖 Node,托管页面 + `/api/chords` 转发 DeepSeek(OpenAI 兼容,`response_format: json_object`),key 只在服务端
+
+- **前端** `index.html`:单文件,纯 Web Audio(解码 / 中置消除去人声 / 按段播放)+ Canvas(吉他弦背景 + 波形条)+ [`web-audio-beat-detector`](https://github.com/chrisguttandin/web-audio-beat-detector)(CDN)估 BPM。音频只在本地浏览器处理,不上传。
+- **后端** `server.js`:零依赖 Node,静态托管。另有**闲置接口**:`/api/song`(公共版权曲库)、`/api/chords`(DeepSeek 和弦实验)。
+- **资源**:`assets/demo-loop.wav`(`scripts/make-demo.js` 合成的原创免版税示例曲)、`assets/songs.json`(公共版权曲库)。
 
 ## 项目结构
+
 ```
 .
-├── index.html        # 前端单文件:UI + Tone.js 音频 + Canvas 视觉 + 和弦解析
-├── server.js         # Node 后端:静态托管 + /api/chords → DeepSeek
-├── .env.example      # 环境变量样例(复制为 .env)
-├── package.json      # 脚本与开发依赖
-├── eslint.config.js  # ESLint 扁平配置
-├── .prettierrc       # Prettier 规则
-├── .editorconfig     # 编辑器统一(缩进/换行/编码)
-└── README.md
+├── index.html        # 前端单文件:UI + Web Audio + Canvas
+├── server.js         # Node 后端:静态托管 + 闲置接口
+├── assets/           # demo-loop.wav(原创示例) / songs.json(公共版权曲库)
+├── scripts/          # make-demo.js(合成示例曲)
+├── docs/PRD.md       # 产品需求文档
+├── package.json · eslint.config.js · .prettierrc · .editorconfig · .env.example
+└── CLAUDE.md · README.md
 ```
 
 ## 开发规范
+
 - **格式化**:Prettier(2 空格、双引号、分号、行宽 110)。提交前 `npm run format`。
 - **静态检查**:ESLint(`@eslint/js` recommended + Prettier 兼容)。`npm run lint`。
-- **风格**:中文注释说明"为什么",命名用小驼峰;前端纯浏览器 API,不引框架。
-- **密钥**:任何 key 只走服务端环境变量 / `.env`,严禁写进前端或提交仓库。
-- 启用 lint/format 需先 `npm install`(仅装开发依赖;运行 `npm start` 不需要)。
+- **风格**:中文注释说明"为什么";前端纯浏览器 API,不引框架;后端零运行依赖。
+- **密钥**:任何 key 只走服务端 `.env` / 环境变量,严禁写进前端或提交仓库。
+- 启用 lint/format 需先 `npm install`(运行 `npm start` 不需要)。
+
+## 版权
+
+只用**用户合法拥有的音频**做本地处理;不抓取/下载/解密受版权保护的音乐,不爬谱站、不复现版权歌词。和弦数据仅来自公共版权曲库或用户粘贴。
 
 ## 路线图
-- [x] 单键扫弦弹唱 + 歌词/和弦卡拉OK高亮
-- [x] 通用和弦解析(任意调/任意和弦)
-- [x] AI 导入(后端 → DeepSeek 出和弦谱)
-- [ ] 保存 + 分享创作
-- [ ] 悬浮插件形态:边打字边演奏,角落的辉光小宠物陪你工作
+
+- [x] 音频段触发(自动按小节切段 + 按键弹段)
+- [x] 浏览器内去人声(中置消除)
+- [x] 乐器风 UI(吉他弦 + 实体键帽)+ 原创示例曲
+- [ ] 高质量人声分离(后端 Demucs/Spleeter 或付费 API)
+- [ ] 手动打点分段 · 保存 / 分享创作
+- [ ] 悬浮插件形态:边打字边演奏,角落辉光小宠物陪你工作
 
 ---
 hackathon demo

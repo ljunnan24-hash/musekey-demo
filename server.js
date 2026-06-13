@@ -25,6 +25,24 @@ loadEnv();
 const PORT = process.env.PORT || 3000;
 const KEY = process.env.DEEPSEEK_API_KEY;
 
+// 公开/公共版权曲库(我们自己维护;只放词曲已进入公共领域的曲子)
+let SONGS = [];
+try {
+  SONGS = JSON.parse(fs.readFileSync(path.join(DIR, "assets", "songs.json"), "utf8"));
+} catch {
+  SONGS = [];
+}
+const normKey = (s) => String(s || "").toLowerCase().replace(/[\s\-_·、,，.。'"《》]/g, "");
+function searchSong(q) {
+  const nq = normKey(q);
+  if (!nq) return null;
+  for (const s of SONGS) {
+    const keys = [s.title, s.artist, ...(s.aliases || [])].map(normKey);
+    if (keys.some((k) => k && (k.includes(nq) || nq.includes(k)))) return s;
+  }
+  return null;
+}
+
 const SYSTEM_PROMPT = [
   "你是吉他伴奏老师。给定歌名,输出该歌的「弹唱和弦谱」,必须是一个 JSON 对象,结构严格如下:",
   '{"title":"歌名","lines":[{"segments":[{"chord":"和弦符号","lyric":"该句歌词"}]}]}',
@@ -137,6 +155,19 @@ async function handleChords(req, res, body) {
 }
 
 const server = http.createServer((req, res) => {
+  // 在公开版权曲库里搜歌 → 返回和弦谱
+  if (req.method === "GET" && req.url.startsWith("/api/song")) {
+    const q = new URL(req.url, "http://localhost").searchParams.get("q") || "";
+    const hit = searchSong(q);
+    if (hit) {
+      send(res, 200, "application/json; charset=utf-8",
+        JSON.stringify({ title: hit.title, artist: hit.artist, lines: hit.lines }));
+    } else {
+      send(res, 404, "application/json; charset=utf-8",
+        JSON.stringify({ error: "没找到这首歌的公开版权谱(流行歌通常没有;可粘贴自定义谱)" }));
+    }
+    return;
+  }
   if (req.method === "POST" && req.url === "/api/chords") {
     let body = "";
     req.on("data", (c) => (body += c));

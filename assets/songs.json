@@ -1,0 +1,35 @@
+[
+  {
+    "title": "Twinkle Twinkle Little Star",
+    "artist": "传统 / 公共版权",
+    "aliases": ["小星星", "twinkle", "一闪一闪", "twinkle twinkle little star"],
+    "lines": [
+      [ { "c": "C", "t": "Twinkle twinkle" }, { "c": "F", "t": "little" }, { "c": "C", "t": "star" } ],
+      [ { "c": "F", "t": "How I" }, { "c": "C", "t": "wonder" }, { "c": "G", "t": "what you" }, { "c": "C", "t": "are" } ],
+      [ { "c": "C", "t": "Up above the" }, { "c": "G", "t": "world so" }, { "c": "C", "t": "high" } ],
+      [ { "c": "C", "t": "Like a" }, { "c": "G", "t": "diamond in the" }, { "c": "C", "t": "sky" } ]
+    ]
+  },
+  {
+    "title": "Amazing Grace",
+    "artist": "John Newton / 公共版权",
+    "aliases": ["amazing grace", "奇异恩典"],
+    "lines": [
+      [ { "c": "C", "t": "Amazing" }, { "c": "F", "t": "grace how" }, { "c": "C", "t": "sweet the sound" } ],
+      [ { "c": "C", "t": "That saved a" }, { "c": "G", "t": "wretch like" }, { "c": "G", "t": "me" } ],
+      [ { "c": "C", "t": "I once was" }, { "c": "F", "t": "lost but" }, { "c": "C", "t": "now am found" } ],
+      [ { "c": "C", "t": "Was blind but" }, { "c": "G", "t": "now I" }, { "c": "C", "t": "see" } ]
+    ]
+  },
+  {
+    "title": "茉莉花",
+    "artist": "中国民歌 / 公共版权",
+    "aliases": ["jasmine flower", "molihua", "好一朵美丽的茉莉花"],
+    "lines": [
+      [ { "c": "C", "t": "好一朵" }, { "c": "F", "t": "美丽的" }, { "c": "C", "t": "茉莉花" } ],
+      [ { "c": "C", "t": "好一朵" }, { "c": "G", "t": "美丽的" }, { "c": "C", "t": "茉莉花" } ],
+      [ { "c": "Am", "t": "芬芳" }, { "c": "F", "t": "美丽" }, { "c": "G", "t": "满枝桠" } ],
+      [ { "c": "C", "t": "又香又白" }, { "c": "G", "t": "人人" }, { "c": "C", "t": "夸" } ]
+    ]
+  }
+]
