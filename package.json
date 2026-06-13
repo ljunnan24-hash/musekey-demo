@@ -1,0 +1,23 @@
+{
+  "name": "musekey",
+  "version": "0.1.0",
+  "private": true,
+  "description": "KeyJam — 自动挡吉他弹唱:单键扫弦 + AI 和弦导入",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.0"
+  }
+}
