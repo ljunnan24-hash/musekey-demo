@@ -74,7 +74,7 @@ await new Promise((r) => setTimeout(r, 600));
 console.log("\n===== 运行期错误 =====");
 console.log(errors.length ? errors.join("\n\n") : "(无)");
 
-const root = window.document.getElementById("maestro-stickman-root");
+const root = window.document.getElementById("maestro-stickman-root-fakeextensionid");
 console.log("\n===== 挂载结果 =====");
 console.log("root 节点是否存在:", !!root);
 const shadow = root?.shadowRoot ?? null;
@@ -185,7 +185,7 @@ if (root) {
   // 1) SPA 整体重建 body：清空 body。挂载点现在在 <html> 下，应存活。
   const savedBody = window.document.body.innerHTML;
   window.document.body.innerHTML = "";
-  const survivedBodyNuke = !!window.document.getElementById("maestro-stickman-root");
+  const survivedBodyNuke = !!window.document.getElementById("maestro-stickman-root-fakeextensionid");
   window.document.body.innerHTML = savedBody;
   console.log(
     "body 被清空后 host 仍在:",
@@ -194,9 +194,9 @@ if (root) {
   );
 
   // 2) 站点显式删除 host：MutationObserver 守护应自动挂回（给一个 tick 让回调跑）。
-  window.document.getElementById("maestro-stickman-root")?.remove();
+  window.document.getElementById("maestro-stickman-root-fakeextensionid")?.remove();
   await new Promise((r) => setTimeout(r, 120));
-  const reinserted = !!window.document.getElementById("maestro-stickman-root");
+  const reinserted = !!window.document.getElementById("maestro-stickman-root-fakeextensionid");
   console.log(
     "host 被删后自动重挂:",
     reinserted,

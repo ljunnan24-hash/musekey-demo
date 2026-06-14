@@ -10,7 +10,7 @@ import {
   type Settings,
 } from "../logic/settings";
 
-const ROOT_ID = "maestro-stickman-root";
+const ROOT_ID = `maestro-stickman-root-${chrome.runtime.id}`;
 const BASE_BOX = 160; // scale=1 时的基础尺寸 px
 
 // 防止同一页面被重复注入（部分站点会多次执行内容脚本）
