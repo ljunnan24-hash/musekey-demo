@@ -164,32 +164,43 @@
 
   <div class="hint">
     随便敲 <b>字母键</b> 出旋律 · 下排低音、中排中音、上排高音<br/>
-    敲什么都会自动落在调上、踩在拍上 —— <b>把电脑递给别人,让他乱敲试试</b>
+    敲什么都会自动落在调上、跟着背景节奏走 —— <b>把电脑递给别人,让他乱敲试试</b>
   </div>
 
   <footer>KeyJam · hackathon demo</footer>
 
 <script>
-// 延迟加载 Tone.js，等用户点击后再初始化，避免 Chrome autoplay 阻止
+// 提前下载 Tone.js，但仍等用户手势后才启动 AudioContext，避免 Chrome autoplay 阻止。
 let _toneReady = false;
+let _tonePromise = null;
 function loadTone() {
-  return new Promise((resolve, reject) => {
-    if (_toneReady) return resolve();
-    if (typeof Tone !== "undefined") { _toneReady = true; return resolve(); }
+  if (_toneReady) return Promise.resolve();
+  if (typeof Tone !== "undefined") { _toneReady = true; return Promise.resolve(); }
+  if (_tonePromise) return _tonePromise;
+  _tonePromise = new Promise((resolve, reject) => {
     const s = document.createElement("script");
     s.src = "https://unpkg.com/tone@14.8.49/build/Tone.js";
     s.onload = () => { _toneReady = true; resolve(); };
     s.onerror = () => { reject(new Error("Tone.js CDN 加载失败")); };
     document.head.appendChild(s);
   });
+  return _tonePromise;
 }
+
+window.addEventListener("load", () => {
+  window.setTimeout(() => {
+    void loadTone().catch(() => {
+      _tonePromise = null;
+    });
+  }, 150);
+}, { once: true });
 
 /* ============================================================
    KeyJam — 核心
    思路:
    - 旋律永远锁在五声音阶 → 怎么敲都不跑调
    - 背景是和弦进行 + 鼓点 → 旋律永远和它和谐
-   - 每次按键吸附到下一个 16 分音符 → 乱敲也踩在拍上
+   - 按键立即发声 → 先保证手感，再由背景鼓点提供节奏感
    - 四种风格一键切换:lo-fi / EDM / 爵士 / 氛围
 ============================================================ */
 
@@ -407,7 +418,7 @@ const canvas = document.getElementById("viz");
 const ctx = canvas.getContext("2d");
 let W, H, dpr;
 function resize() {
-  dpr = Math.min(1.5, window.devicePixelRatio || 1);
+  dpr = Math.min(1.25, window.devicePixelRatio || 1);
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = W * dpr; canvas.height = H * dpr;
   canvas.style.width = W + "px"; canvas.style.height = H + "px";
@@ -420,9 +431,10 @@ const orbs = [];   // 飘升的光球
 const rings = [];  // 扩散的光圈(Brian Eno Bloom 那种)
 let pulse = 0;     // 跟随底鼓的能量脉冲
 let lastVizFrame = 0;
-const VIZ_FRAME_MS = 1000 / 45;
-const MAX_ORBS = 72;
-const MAX_RINGS = 28;
+let vizWasActive = false;
+const VIZ_FRAME_MS = 1000 / 30;
+const MAX_ORBS = 36;
+const MAX_RINGS = 12;
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -430,6 +442,14 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 function noteColor(midi) {
   const t = clamp((midi - 48) / (84 - 48), 0, 1);
   return { h: 196 + t * 128, s: 88, l: 70 };
+}
+
+const NOTE_MIDI = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+function midiFromNote(note) {
+  const match = /^([A-G])(#?)(-?\d+)$/.exec(note);
+  if (!match) return 60;
+  const [, name, sharp, octave] = match;
+  return (Number(octave) + 1) * 12 + NOTE_MIDI[name] + (sharp ? 1 : 0);
 }
 
 // 背景极光:几团缓慢漂移的柔光,让画面"活着"(空闲时也好看)
@@ -464,23 +484,20 @@ function render(ts) {
   requestAnimationFrame(render);
   if (document.hidden || ts - lastVizFrame < VIZ_FRAME_MS) return;
   lastVizFrame = ts;
-  const maxD = Math.max(W, H);
+
+  const active = rings.length > 0 || orbs.length > 0 || pulse > 0.02;
+  if (!active) {
+    if (vizWasActive) {
+      ctx.clearRect(0, 0, W, H);
+      vizWasActive = false;
+    }
+    return;
+  }
+
+  vizWasActive = true;
   ctx.clearRect(0, 0, W, H);
   ctx.globalCompositeOperation = "lighter";
-
-  // 背景极光
-  const glow = 0.06 + pulse * 0.05;
-  for (const b of blobs) {
-    const cx = (b.hx + b.ax * Math.sin(ts * b.sx + b.ph)) * W;
-    const cy = (b.hy + b.ay * Math.cos(ts * b.sy + b.ph)) * H;
-    const rad = b.r * maxD * (1 + pulse * 0.06);
-    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-    g.addColorStop(0, `hsla(${b.hue},78%,56%,${glow})`);
-    g.addColorStop(1, `hsla(${b.hue},78%,56%,0)`);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
-  }
-  pulse *= 0.90;
+  pulse *= 0.86;
 
   // 扩散光环(带辉光)
   for (let i = rings.length - 1; i >= 0; i--) {
@@ -491,7 +508,7 @@ function render(ts) {
     ctx.arc(r.x, r.y, r.r, 0, 7);
     ctx.strokeStyle = `hsla(${r.c.h},${r.c.s}%,${r.c.l}%,${a * 0.6})`;
     ctx.lineWidth = 2 + a * 2;
-    ctx.shadowBlur = 22; ctx.shadowColor = `hsl(${r.c.h} ${r.c.s}% ${r.c.l}%)`;
+    ctx.shadowBlur = 10; ctx.shadowColor = `hsl(${r.c.h} ${r.c.s}% ${r.c.l}%)`;
     ctx.stroke();
     ctx.shadowBlur = 0;
     if (r.life <= 0) rings.splice(i, 1);
@@ -534,12 +551,25 @@ function flashKey(k, midi, vel) {
   spawnNote(r.left + r.width / 2, r.top + r.height / 2, midi, vel);
 }
 
+function signalKey(k, note, midi, vel) {
+  flashKey(k, midi, vel);
+  postMaestro("note", { note, midi, velocity: vel, key: k, style: currentStyle });
+}
+
+function previewKey(k) {
+  const note = keyToNote[k];
+  if (!note) return;
+  const vel = 0.82;
+  signalKey(k, note, midiFromNote(note), vel);
+}
+
 /* ---------------- 音频引擎 ---------------- */
 // 三态: false(未开始) / "loading"(初始化中) / true(就绪)
 let started = false;
+let queuedStartupKey = null;
 
 // 持有当前引擎实例，切换风格时需要清理
-let engineNodes = null; // { reverb, delay, melody, pad, kick, snare, hat, seqs:[] }
+let engineNodes = null; // { ambienceGain, delay, melody, pad, kick, snare, hat, seqs:[] }
 
 function getStyle() { return STYLES[currentStyle]; }
 
@@ -547,40 +577,33 @@ function buildEngine() {
   const s = getStyle();
   console.log("[KJ] buildEngine: start, style=", currentStyle);
 
-  // 干声总线：旋律和 pad 的直达路径（绕过混响，确保 Reverb IR 未就绪时仍有声）
+  // 干声总线：旋律和 pad 的直达路径，优先保证按键手感。
   const dryGain = new Tone.Gain(s.melodyVol > -8 ? 0.65 : 0.75).toDestination();
   console.log("[KJ] buildEngine: dryGain created");
 
-  // 混响：wet=1 即只输出湿声，作为"发送返回"的湿端
-  const reverb = new Tone.Reverb({ decay: s.reverbDecay, wet: 1.0 });
-  const reverbGain = new Tone.Gain(s.reverbWet);  // 控制湿声量
-  reverb.connect(reverbGain);
-  reverbGain.toDestination();
-  console.log("[KJ] buildEngine: reverb chain created, decay=", s.reverbDecay);
-
-  // 延迟 → 混响
+  // 低延迟湿声端：不用 Tone.Reverb，避免首次启动生成 IR 带来的明显卡顿。
+  const ambienceGain = new Tone.Gain(s.reverbWet * 0.55).toDestination();
   const delay = new Tone.FeedbackDelay(s.delayTime, s.delayFB);
   delay.wet.value = s.delayWet;
-  delay.connect(reverb);
-  console.log("[KJ] buildEngine: delay created");
+  delay.connect(ambienceGain);
+  console.log("[KJ] buildEngine: low-latency delay created");
 
-  // 旋律音色：干声 → dryGain，湿声 → delay → reverb
+  // 旋律音色：干声 → dryGain，湿声 → delay
   const melodySynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: s.melodyOsc },
     envelope: s.melodyEnv,
     volume: s.melodyVol,
   });
   melodySynth.connect(dryGain);   // 干声直达（始终有声音）
-  melodySynth.connect(delay);     // 湿声经延迟入混响
+  melodySynth.connect(delay);     // 湿声经轻量 delay
 
-  // 铺底和弦 pad：干声 → dryGain，湿声 → reverb
+  // 铺底和弦 pad：干声直达，避免重效果启动卡顿。
   const padSynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: s.padOsc },
     envelope: s.padEnv,
     volume: s.padVol,
   });
-  padSynth.connect(dryGain);      // 干声直达
-  padSynth.connect(reverb);       // 湿声入混响
+  padSynth.connect(dryGain);
 
   // 鼓：直连 destination（不经混响）
   const kickSynth = new Tone.MembraneSynth({ volume: s.kickVol }).toDestination();
@@ -619,7 +642,7 @@ function buildEngine() {
   }, [...Array(16).keys()], "16n").start(0);
 
   engineNodes = {
-    dryGain, reverb, reverbGain, delay,
+    dryGain, ambienceGain, delay,
     melody: melodySynth, pad: padSynth,
     kick: kickSynth, snare: snareSynth, hat: hatSynth,
     seqs: [chordSeq, drumSeq],
@@ -632,7 +655,7 @@ function disposeEngine() {
   if (!engineNodes) return;
   const n = engineNodes;
   for (const seq of n.seqs) { try { seq.stop(); seq.dispose(); } catch {} }
-  for (const k of ["melody","pad","kick","snare","hat","reverb","reverbGain","dryGain","delay"]) {
+  for (const k of ["melody","pad","kick","snare","hat","ambienceGain","dryGain","delay"]) {
     try { n[k].dispose(); } catch {}
   }
   engineNodes = null;
@@ -651,10 +674,19 @@ function updateVisuals() {
   document.getElementById("vibeLabel").textContent = "VIBE · " + s.label.toLowerCase();
 }
 
-async function start() {
-  if (started) { console.log("[KJ] start: already started, skip"); return; }
+async function start(initialKey = null) {
+  const startupKey = typeof initialKey === "string" && keyToNote[initialKey] ? initialKey : null;
+  if (started === true) {
+    if (startupKey) playKey(startupKey);
+    return;
+  }
+  if (started === "loading") {
+    if (startupKey) queuedStartupKey = startupKey;
+    return;
+  }
   started = "loading";
   console.log("[KJ] start: begin");
+  if (startupKey) queuedStartupKey = startupKey;
 
   const overlayEl = document.getElementById("overlay");
   overlayEl.style.display = "none";
@@ -679,6 +711,11 @@ async function start() {
     console.log("[KJ] start: Transport started, state:", Tone.Transport.state);
     started = true;
     postMaestro("start", { style: currentStyle });
+    if (queuedStartupKey) {
+      const key = queuedStartupKey;
+      queuedStartupKey = null;
+      playKey(key, { signal: false });
+    }
   } catch (e) {
     console.error("[KJ] start: FAILED", e.message, e.stack);
     started = false;
@@ -725,7 +762,7 @@ window.switchStyle = switchStyle;
 
 /* ---------------- 键盘输入 ---------------- */
 let playCount = 0;
-function playKey(k) {
+function playKey(k, options = {}) {
   const note = keyToNote[k];
   if (!note) return;
   if (!engineNodes || !engineNodes.melody) { console.log("[KJ] playKey: no engine/melody"); return; }
@@ -735,21 +772,31 @@ function playKey(k) {
   playCount++;
   if (playCount <= 3) console.log("[KJ] playKey:", k, "→", note, "now", "count:", playCount);
 
-  const midi = Tone.Frequency(note).toMidi();
-  flashKey(k, midi, vel);
-  postMaestro("note", { note, midi, velocity: vel, key: k, style: currentStyle });
+  if (options.signal !== false) {
+    signalKey(k, note, midiFromNote(note), vel);
+  }
 }
 
 document.addEventListener("keydown", (e) => {
-  if (started === "loading") { console.log("[KJ] key: loading, skip"); return; }
-  if (!started) { console.log("[KJ] key: not started, calling start()"); start(); return; }
-  if (e.repeat) return;
   const k = e.key.toLowerCase();
-  if (keyToNote[k]) { e.preventDefault(); playKey(k); }
-  else console.log("[KJ] key:", k, "not mapped");
+  if (!keyToNote[k]) return;
+  e.preventDefault();
+  if (e.repeat) return;
+
+  if (started === "loading") {
+    previewKey(k);
+    queuedStartupKey = k;
+    return;
+  }
+  if (!started) {
+    previewKey(k);
+    start(k);
+    return;
+  }
+  playKey(k);
 });
 
-document.getElementById("overlay").addEventListener("click", start);
+document.getElementById("overlay").addEventListener("click", () => start());
 document.body.addEventListener("click", () => { if (!started) start(); });
 
 console.log("[KJ] page ready, keys mapped:", Object.keys(keyToNote).length, "style:", currentStyle);
