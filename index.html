@@ -361,20 +361,24 @@ function getStyle() { return STYLES[currentStyle]; }
 
 function buildEngine() {
   const s = getStyle();
+  console.log("[KJ] buildEngine: start, style=", currentStyle);
 
   // 干声总线：旋律和 pad 的直达路径（绕过混响，确保 Reverb IR 未就绪时仍有声）
   const dryGain = new Tone.Gain(s.melodyVol > -8 ? 0.65 : 0.75).toDestination();
+  console.log("[KJ] buildEngine: dryGain created");
 
   // 混响：wet=1 即只输出湿声，作为"发送返回"的湿端
   const reverb = new Tone.Reverb({ decay: s.reverbDecay, wet: 1.0 });
   const reverbGain = new Tone.Gain(s.reverbWet);  // 控制湿声量
   reverb.connect(reverbGain);
   reverbGain.toDestination();
+  console.log("[KJ] buildEngine: reverb chain created, decay=", s.reverbDecay);
 
   // 延迟 → 混响
   const delay = new Tone.FeedbackDelay(s.delayTime, s.delayFB);
   delay.wet.value = s.delayWet;
   delay.connect(reverb);
+  console.log("[KJ] buildEngine: delay created");
 
   // 旋律音色：干声 → dryGain，湿声 → delay → reverb
   const melodySynth = new Tone.PolySynth(Tone.Synth, {
@@ -428,6 +432,7 @@ function buildEngine() {
     kick: kickSynth, snare: snareSynth, hat: hatSynth,
     seqs: [chordSeq, drumSeq],
   };
+  console.log("[KJ] buildEngine: done, melody created, kick created");
   return engineNodes;
 }
 
@@ -455,28 +460,37 @@ function updateVisuals() {
 }
 
 async function start() {
-  if (started) return;
+  if (started) { console.log("[KJ] start: already started, skip"); return; }
   started = "loading";
+  console.log("[KJ] start: begin");
 
   if (typeof Tone === "undefined") {
+    console.log("[KJ] start: Tone undefined");
     document.querySelector("#overlay p").textContent = "音色引擎加载中,请稍等再试…";
     started = false;
     return;
   }
+  console.log("[KJ] start: Tone version", Tone.version);
 
   const overlayEl = document.getElementById("overlay");
   overlayEl.style.display = "none";
 
   try {
+    console.log("[KJ] start: calling Tone.start()…");
     await Tone.start();
+    console.log("[KJ] start: Tone.start() done, state:", Tone.getContext().state);
+
     const s = getStyle();
+    console.log("[KJ] start: style=", currentStyle, "bpm=", s.bpm);
     Tone.Transport.bpm.value = s.bpm;
     buildEngine();
+    console.log("[KJ] start: engine built, melody=", !!engineNodes.melody, "kick=", !!engineNodes.kick);
     updateVisuals();
     Tone.Transport.start();
+    console.log("[KJ] start: Transport started, state:", Tone.Transport.state);
     started = true;
   } catch (e) {
-    console.error("KeyJam 音频启动失败:", e);
+    console.error("[KJ] start: FAILED", e.message, e.stack);
     started = false;
     overlayEl.style.display = "flex";
     document.querySelector("#overlay p").textContent = "音频启动失败,请刷新页面重试";
@@ -517,30 +531,34 @@ document.querySelectorAll(".sbtn").forEach((btn) => {
 window.switchStyle = switchStyle;
 
 /* ---------------- 键盘输入 ---------------- */
+let playCount = 0;
 function playKey(k) {
   const note = keyToNote[k];
   if (!note) return;
-  if (!engineNodes || !engineNodes.melody) return;
-  // 节奏吸附:落到下一个 16 分音符,乱敲也踩在拍上
+  if (!engineNodes || !engineNodes.melody) { console.log("[KJ] playKey: no engine/melody"); return; }
   const time = Tone.Transport.nextSubdivision("16n");
   const vel = 0.7 + Math.random() * 0.3;
   engineNodes.melody.triggerAttackRelease(note, "8n", time, vel);
+  playCount++;
+  if (playCount <= 3) console.log("[KJ] playKey:", k, "→", note, "@", time.toFixed(2), "count:", playCount);
 
-  // 视觉反馈与声音同步落在那一拍
   const midi = Tone.Frequency(note).toMidi();
   Tone.Draw.schedule(() => flashKey(k, midi, vel), time);
 }
 
 document.addEventListener("keydown", (e) => {
-  if (started === "loading") return;          // 音频还在初始化,等一等
-  if (!started) { start(); return; }          // 首次按键触发启动
-  if (e.repeat) return;                       // 长按不连发
+  if (started === "loading") { console.log("[KJ] key: loading, skip"); return; }
+  if (!started) { console.log("[KJ] key: not started, calling start()"); start(); return; }
+  if (e.repeat) return;
   const k = e.key.toLowerCase();
   if (keyToNote[k]) { e.preventDefault(); playKey(k); }
+  else console.log("[KJ] key:", k, "not mapped");
 });
 
 document.getElementById("overlay").addEventListener("click", start);
 document.body.addEventListener("click", () => { if (!started) start(); });
+
+console.log("[KJ] page ready, keys mapped:", Object.keys(keyToNote).length, "style:", currentStyle);
 </script>
 </body>
 </html>
