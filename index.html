@@ -249,6 +249,12 @@ let buffer = null; // 当前播放用的 buffer(指向上面之一)
 let segments = [], bpm = 100, offset = 0;
 let activeSeg = -1, curSrc = null, playSeg = -1, playStart = 0;
 
+// 持久化音频图节点（首次 ensureAudio 时搭建）
+let masterGain = null;       // 总输出增益，防多源叠加削波
+let reverbConvolver = null;  // 卷积混响
+let reverbGain = null;       // 湿信号比例
+let curDryGain = null;       // 当前段干声增益（用于交叉渐变）
+
 const metaEl = document.getElementById("meta");
 const bpmValEl = document.getElementById("bpmVal");
 const segCountEl = document.getElementById("segCount");
@@ -256,9 +262,51 @@ const capSub = document.getElementById("capSub");
 const capEl = document.getElementById("tapBtn");
 const instBtn = document.getElementById("instBtn");
 
-function ensureAudio() {
+// 合成房间脉冲响应：立体声白噪声指数衰减
+// duration: 尾长（秒），decay: 衰减曲线指数（越大越快衰减）
+function createReverbIR(ctx, duration, decay) {
+  const sampleRate = ctx.sampleRate;
+  const length = Math.floor(sampleRate * duration);
+  const ir = ctx.createBuffer(2, length, sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = ir.getChannelData(ch);
+    for (let i = 0; i < length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+    }
+  }
+  return ir;
+}
+
+async function ensureAudio() {
   if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
-  if (AC.state === "suspended") AC.resume();
+  if (AC.state === "suspended") await AC.resume();
+
+  // 首次调用时搭建持久化音频图（仅一次）
+  if (!masterGain) {
+    try {
+      // 总输出：留 20% 余量防多源叠加削波
+      masterGain = AC.createGain();
+      masterGain.gain.value = 0.80;
+      masterGain.connect(AC.destination);
+
+      // 混响链：卷积器 → 湿增益 → 总输出
+      reverbConvolver = AC.createConvolver();
+      reverbConvolver.buffer = createReverbIR(AC, 1.5, 3.0); // 1.5s 尾，自然房间感
+      reverbGain = AC.createGain();
+      reverbGain.gain.value = 0.30; // 30% 湿信号，可感知但不淹没干声
+      reverbConvolver.connect(reverbGain);
+      reverbGain.connect(masterGain);
+    } catch {
+      // 混响搭建失败时至少保证干声链路能响
+      if (!masterGain) {
+        masterGain = AC.createGain();
+        masterGain.gain.value = 0.85;
+        masterGain.connect(AC.destination);
+      }
+      reverbConvolver = null;
+      reverbGain = null;
+    }
+  }
 }
 
 // 中置消除:左−右 → 单声道伴奏(人声通常在中置被抵消)
@@ -291,7 +339,7 @@ function toggleInst() {
 
 async function handleFile(file) {
   if (!file) return;
-  ensureAudio();
+  await ensureAudio();
   const lower = file.name.toLowerCase();
   if (/\.(ncm|kgm|kgma|qmc\w*|mflac|mgg|tm[02])$/.test(lower) || (file.type && !file.type.startsWith("audio"))) {
     metaEl.textContent = "这个格式解不了(如 .ncm 是网易云加密格式)。请用 mp3 / wav / m4a / flac";
@@ -319,7 +367,7 @@ async function handleFile(file) {
 }
 
 async function loadDemo() {
-  ensureAudio();
+  await ensureAudio();
   metaEl.textContent = "载入示例曲…";
   try {
     bufferFull = await AC.decodeAudioData(await (await fetch("assets/demo-loop.wav")).arrayBuffer());
@@ -334,6 +382,12 @@ async function loadDemo() {
 }
 
 function buildSegments() {
+  // BPM 改变或重新切段时，停掉旧 source 避免旧 schedule 残留
+  if (curSrc) {
+    try { curSrc.stop(); } catch { /* 已停 */ }
+    curSrc = null;
+    curDryGain = null;
+  }
   segments = [];
   if (!buffer) return;
   const dur = buffer.duration;
@@ -351,16 +405,53 @@ function updateSegCount() {
 function play(i) {
   const seg = segments[i];
   if (!seg) return;
-  if (curSrc) { try { curSrc.stop(); } catch { /* 已停 */ } }
+
+  const now = AC.currentTime;
+
+  // 交叉渐变：快速淡出上一段的干声
+  if (curDryGain) {
+    const prevGain = curDryGain;
+    try {
+      prevGain.gain.cancelScheduledValues(now);                      // 清除旧段排期的段尾 fade
+      prevGain.gain.setValueAtTime(prevGain.gain.value, now);        // 从当前值开始
+      prevGain.gain.linearRampToValueAtTime(0, now + 0.04);          // 40ms 淡出
+    } catch { /* 节点可能已被回收 */ }
+  }
+  // 不再 stop() 旧 source —— 让它自然播完，混响收到完整信号，IR 尾音自然延续
+
+  // 创建新声源和增益节点
   const src = AC.createBufferSource();
   src.buffer = buffer;
-  src.connect(AC.destination);
-  src.start(0, seg.start, seg.dur);
-  curSrc = src; playSeg = i; playStart = AC.currentTime;
+  const dryGain = AC.createGain();
+  dryGain.gain.value = 0; // 从静音开始
+  src.connect(dryGain);
+
+  // 干声：dryGain → masterGain
+  dryGain.connect(masterGain);
+  // 混响发送：dryGain → reverbConvolver（共享增益，淡入时混响也自然渐入）
+  if (reverbConvolver) dryGain.connect(reverbConvolver);
+
+  // 淡入新段干声（60ms，略长于淡出，过渡更顺滑）
+  dryGain.gain.setValueAtTime(0, now);
+  dryGain.gain.linearRampToValueAtTime(1.0, now + 0.06);
+
+  // 播放
+  src.start(now, seg.start, seg.dur);
+
+  // 段自然结束时，提前做极短 fade-out 防爆音（源停止后卷积器尾音继续约 1.5s）
+  const endT = now + seg.dur;
+  dryGain.gain.setValueAtTime(1.0, Math.max(now + 0.06, endT - 0.015));
+  dryGain.gain.linearRampToValueAtTime(0, endT);
+
+  // 更新全局状态
+  curSrc = src;
+  curDryGain = dryGain;
+  playSeg = i;
+  playStart = now;
 }
 
-function tap() {
-  ensureAudio();
+async function tap() {
+  await ensureAudio();
   capEl.classList.add("down");
   setTimeout(() => capEl.classList.remove("down"), 90);
   pluck();
@@ -405,10 +496,10 @@ window.addEventListener("drop", (e) => {
   if (f && f.type.startsWith("audio")) { startApp(); handleFile(f); }
 });
 
-function startApp() {
-  ensureAudio();
+async function startApp() {
+  await ensureAudio();
   document.getElementById("overlay").style.display = "none";
-  if (!bufferFull) loadDemo(); // 进来即可弹:自动载入示例曲
+  if (!bufferFull) loadDemo();
 }
 document.getElementById("overlay").addEventListener("click", startApp);
 
