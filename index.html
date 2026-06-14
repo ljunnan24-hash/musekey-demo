@@ -43,6 +43,51 @@
   .sbtn.on { background: var(--accent); color: #1a172a; border-color: var(--accent);
               box-shadow: 0 0 16px rgba(255,143,171,.3); }
 
+  .maestro-panel {
+    margin-top: 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    min-height: 30px;
+  }
+  .maestro-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 999px;
+    background: rgba(255,255,255,.05);
+    color: var(--muted);
+    padding: 6px 12px;
+    font: 600 .78rem/1 -apple-system, "PingFang SC", "Segoe UI", system-ui, sans-serif;
+    cursor: pointer;
+    transition: all .15s ease;
+  }
+  .maestro-toggle:hover { color: var(--fg); border-color: rgba(255,255,255,.26); }
+  .maestro-toggle.on {
+    color: #1a172a;
+    background: var(--accent2);
+    border-color: var(--accent2);
+    box-shadow: 0 0 16px rgba(143,211,255,.24);
+  }
+  .maestro-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .85;
+  }
+  .maestro-status {
+    color: var(--muted);
+    font-size: .75rem;
+    min-width: 156px;
+    text-align: left;
+  }
+  .maestro-status.ok { color: var(--accent2); }
+  .maestro-status.off { color: var(--muted); }
+  .maestro-status.missing { color: #ffd18a; }
+
   #keyboard { margin-top: 4vh; display: flex; flex-direction: column; gap: 12px; }
   .row { display: flex; gap: 12px; justify-content: center; }
   .key {
@@ -105,6 +150,13 @@
       <button class="sbtn" data-style="edm">EDM</button>
       <button class="sbtn" data-style="jazz">Jazz</button>
       <button class="sbtn" data-style="ambient">Ambient</button>
+    </div>
+    <div class="maestro-panel" id="maestroPanel">
+      <button class="maestro-toggle on" id="maestroToggle" type="button" aria-pressed="true">
+        <span class="maestro-dot"></span>
+        <span>Maestro</span>
+      </button>
+      <span class="maestro-status" id="maestroStatus">检测插件…</span>
     </div>
   </header>
 
@@ -202,6 +254,115 @@ const STYLES = {
 };
 
 let currentStyle = "lofi";
+
+const MAESTRO_EVENT = "KEYJAM_MAESTRO_EVENT";
+const MAESTRO_ACK = "KEYJAM_MAESTRO_ACK";
+const MAESTRO_COMMAND = "MAESTRO_KEYJAM_COMMAND";
+const MAESTRO_STORAGE_KEY = "keyjam_maestro_enabled";
+const MAESTRO_ACK_WAIT_MS = 800;
+const maestroToggle = document.getElementById("maestroToggle");
+const maestroStatus = document.getElementById("maestroStatus");
+let maestroEnabled = localStorage.getItem(MAESTRO_STORAGE_KEY) !== "false";
+let maestroDetected = false;
+let maestroAckTimer = null;
+
+function updateMaestroUI() {
+  maestroToggle.classList.toggle("on", maestroEnabled);
+  maestroToggle.setAttribute("aria-pressed", maestroEnabled ? "true" : "false");
+  maestroStatus.classList.remove("ok", "off", "missing");
+  if (!maestroEnabled) {
+    maestroStatus.textContent = "本页已关闭";
+    maestroStatus.classList.add("off");
+  } else if (maestroDetected) {
+    maestroStatus.textContent = "已连接";
+    maestroStatus.classList.add("ok");
+  } else {
+    maestroStatus.textContent = "检测插件…";
+  }
+}
+
+function postMaestro(event, payload = {}) {
+  window.postMessage({
+    type: MAESTRO_EVENT,
+    version: 1,
+    event,
+    style: currentStyle,
+    enabled: maestroEnabled,
+    ...payload,
+  }, "*");
+}
+
+function markMaestroMissingSoon() {
+  if (maestroAckTimer) clearTimeout(maestroAckTimer);
+  maestroAckTimer = setTimeout(() => {
+    if (!maestroEnabled || maestroDetected) return;
+    maestroStatus.textContent = "未检测到插件，请在 Chrome 扩展加载 dist/";
+    maestroStatus.classList.add("missing");
+  }, MAESTRO_ACK_WAIT_MS);
+}
+
+function pingMaestro() {
+  if (!maestroEnabled) {
+    postMaestro("pageEnabled", { enabled: false });
+    return;
+  }
+  maestroDetected = false;
+  updateMaestroUI();
+  postMaestro("hello");
+  markMaestroMissingSoon();
+}
+
+function setMaestroEnabled(next) {
+  maestroEnabled = next;
+  localStorage.setItem(MAESTRO_STORAGE_KEY, String(next));
+  if (!next) maestroDetected = false;
+  updateMaestroUI();
+  postMaestro("pageEnabled", { enabled: next });
+  if (next) pingMaestro();
+}
+
+function setStyleButtonState(key) {
+  document.querySelectorAll(".sbtn").forEach((b) => {
+    b.classList.toggle("on", b.dataset.style === key);
+  });
+}
+
+maestroToggle.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setMaestroEnabled(!maestroEnabled);
+});
+
+window.addEventListener("message", (event) => {
+  if (event.source !== window) return;
+  const data = event.data || {};
+  if (data.type === MAESTRO_ACK && data.version === 1 && data.installed) {
+    maestroDetected = true;
+    if (maestroAckTimer) clearTimeout(maestroAckTimer);
+    updateMaestroUI();
+    postMaestro("pageEnabled", { enabled: maestroEnabled });
+    postMaestro("style", { style: currentStyle });
+    return;
+  }
+  if (data.type === MAESTRO_COMMAND && data.version === 1 && data.command === "setStyle") {
+    if (STYLES[data.style]) switchStyle(data.style);
+  }
+});
+
+updateMaestroUI();
+pingMaestro();
+window.addEventListener("load", () => {
+  setTimeout(() => {
+    if (maestroEnabled && !maestroDetected) {
+      postMaestro("hello");
+      markMaestroMissingSoon();
+    } else if (!maestroEnabled) {
+      postMaestro("pageEnabled", { enabled: false });
+    }
+  }, 200);
+  setTimeout(() => {
+    if (maestroEnabled && !maestroDetected) postMaestro("hello");
+  }, 900);
+});
 
 const PENTA = ["C", "D", "E", "G", "A"]; // C 大调五声音阶,所有风格共用,靠伴奏变化区分风格
 
@@ -430,12 +591,20 @@ function buildEngine() {
 
   // 鼓点:一小节 16 步
   const drumSeq = new Tone.Sequence((time, i) => {
+    let beatKind = "";
     if (s.kickPat[i]) {
       kickSynth.triggerAttackRelease("C1", "8n", time);
       Tone.Draw.schedule(() => { pulse = Math.min(1.2, pulse + 0.9); }, time);
+      beatKind = "kick";
     }
-    if (s.snarePat[i]) snareSynth.triggerAttackRelease("16n", time);
+    if (s.snarePat[i]) {
+      snareSynth.triggerAttackRelease("16n", time);
+      beatKind = beatKind || "snare";
+    }
     if (i % s.hatEvery === 0) hatSynth.triggerAttackRelease("16n", time, 0.3 + Math.random() * 0.3);
+    if (beatKind) {
+      Tone.Draw.schedule(() => postMaestro("beat", { beatKind }), time);
+    }
   }, [...Array(16).keys()], "16n").start(0);
 
   engineNodes = {
@@ -498,6 +667,7 @@ async function start() {
     Tone.Transport.start();
     console.log("[KJ] start: Transport started, state:", Tone.Transport.state);
     started = true;
+    postMaestro("start", { style: currentStyle });
   } catch (e) {
     console.error("[KJ] start: FAILED", e.message, e.stack);
     started = false;
@@ -507,11 +677,16 @@ async function start() {
 }
 
 async function switchStyle(key) {
-  if (started !== true || currentStyle === key) return;
+  if (!STYLES[key]) return;
+  if (currentStyle === key) {
+    setStyleButtonState(key);
+    return;
+  }
   currentStyle = key;
-
-  // 更新按钮激活态
-  document.querySelectorAll(".sbtn").forEach((b) => b.classList.toggle("on", b.dataset.style === key));
+  setStyleButtonState(key);
+  updateVisuals();
+  postMaestro("style", { style: key });
+  if (started !== true) return;
 
   // 停止并清理旧引擎
   Tone.Transport.stop();
@@ -521,17 +696,15 @@ async function switchStyle(key) {
   const s = getStyle();
   Tone.Transport.bpm.value = s.bpm;
   buildEngine();
-  updateVisuals();
   Tone.Transport.start();
 }
 
 // 风格按钮事件
 document.querySelectorAll(".sbtn").forEach((btn) => {
-  btn.addEventListener("click", () => {
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
     const key = btn.dataset.style;
     if (!key || currentStyle === key) return;
-    // 更新按钮激活态
-    document.querySelectorAll(".sbtn").forEach((b) => b.classList.toggle("on", b.dataset.style === key));
     switchStyle(key);
   });
 });
@@ -552,7 +725,10 @@ function playKey(k) {
   if (playCount <= 3) console.log("[KJ] playKey:", k, "→", note, "@", time.toFixed(2), "count:", playCount);
 
   const midi = Tone.Frequency(note).toMidi();
-  Tone.Draw.schedule(() => flashKey(k, midi, vel), time);
+  Tone.Draw.schedule(() => {
+    flashKey(k, midi, vel);
+    postMaestro("note", { note, midi, velocity: vel, key: k, style: currentStyle });
+  }, time);
 }
 
 document.addEventListener("keydown", (e) => {

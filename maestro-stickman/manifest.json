@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Maestro Stickman",
+  "version": "0.1.0",
+  "description": "A floating stickman musician that reacts to your typing. Works without any remote services.",
+  "permissions": ["storage"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Maestro Stickman"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["maestro_stickman.riv"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

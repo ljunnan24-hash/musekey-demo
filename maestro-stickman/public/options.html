@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Maestro Stickman — 设置</title>
+    <style>
+      :root {
+        --bg: #14121c;
+        --card: #1b1826;
+        --pink: #ff8fab;
+        --text: #ece8ff;
+        --muted: #8b86a8;
+        --border: rgba(255, 143, 171, 0.35);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 -apple-system, "PingFang SC", system-ui, sans-serif;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        padding: 40px 16px;
+      }
+      .card {
+        width: 100%;
+        max-width: 520px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 28px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--pink);
+      }
+      .sub { color: var(--muted); font-size: 12px; margin-bottom: 24px; }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 0;
+        border-top: 1px solid rgba(255, 143, 171, 0.12);
+      }
+      .row:first-of-type { border-top: none; }
+      .row label { flex: 1; }
+      .row .hint { color: var(--muted); font-size: 11px; margin-top: 2px; }
+      .ctrl { display: flex; align-items: center; gap: 10px; }
+      /* 开关 */
+      .switch { position: relative; width: 44px; height: 24px; flex: none; }
+      .switch input {
+        opacity: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        position: absolute;
+        cursor: pointer;
+      }
+      .switch .track {
+        position: absolute;
+        inset: 0;
+        background: #3a3550;
+        border-radius: 999px;
+        transition: background 0.15s;
+      }
+      .switch .knob {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 18px;
+        height: 18px;
+        background: #fff;
+        border-radius: 50%;
+        transition: transform 0.15s;
+      }
+      .switch input:checked + .track { background: var(--pink); }
+      .switch input:checked + .track + .knob { transform: translateX(20px); }
+      /* 滑条 / 数字 / 下拉 */
+      input[type="range"] { accent-color: var(--pink); width: 150px; }
+      input[type="number"] {
+        width: 70px;
+        background: #14121c;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 8px;
+        font: inherit;
+      }
+      select {
+        background: #14121c;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 8px;
+        font: inherit;
+      }
+      output {
+        color: var(--pink);
+        font-variant-numeric: tabular-nums;
+        min-width: 40px;
+        text-align: right;
+      }
+      .block { padding: 14px 0; border-top: 1px solid rgba(255, 143, 171, 0.12); }
+      .block label { display: block; margin-bottom: 6px; }
+      textarea {
+        width: 100%;
+        background: #14121c;
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px;
+        font: 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+        resize: vertical;
+      }
+      .actions { display: flex; justify-content: flex-end; margin-top: 24px; }
+      button {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 14px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover { color: var(--pink); border-color: var(--pink); }
+      .saved {
+        color: var(--pink);
+        font-size: 12px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        margin-left: auto;
+        margin-right: 12px;
+      }
+      .saved.show { opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Maestro Stickman</h1>
+      <div class="sub">设置实时生效，无需刷新页面。</div>
+
+      <div class="row">
+        <div>
+          <label for="enabled">启用火柴人</label>
+          <div class="hint">关闭后右下角小人立即消失</div>
+        </div>
+        <div class="ctrl">
+          <label class="switch">
+            <input type="checkbox" id="enabled" />
+            <span class="track"></span><span class="knob"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="scale">尺寸</label>
+          <div class="hint">基础 160px × 缩放</div>
+        </div>
+        <div class="ctrl">
+          <input type="range" id="scale" min="0.5" max="2" step="0.05" />
+          <output id="scaleOut">100%</output>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="corner">位置</label>
+          <div class="hint">贴屏幕哪个角</div>
+        </div>
+        <div class="ctrl">
+          <select id="corner">
+            <option value="bottom-right">右下</option>
+            <option value="bottom-left">左下</option>
+            <option value="top-right">右上</option>
+            <option value="top-left">左上</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="margin">边距</label>
+          <div class="hint">距所选边的像素</div>
+        </div>
+        <div class="ctrl">
+          <input type="number" id="margin" min="0" max="200" step="1" />
+          <span>px</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="opacity">透明度</label>
+          <div class="hint">小人不透明程度</div>
+        </div>
+        <div class="ctrl">
+          <input type="range" id="opacity" min="0.1" max="1" step="0.05" />
+          <output id="opacityOut">100%</output>
+        </div>
+      </div>
+
+      <div class="block">
+        <label for="blocklist">在以下网站禁用</label>
+        <div class="hint" style="margin-bottom: 8px">
+          每行一条，支持 <code>*</code> 通配。例：<code>mail.google.com</code>、<code>*.example.com</code>、<code>example.com/admin/*</code>
+        </div>
+        <textarea id="blocklist" rows="6" placeholder="example.com"></textarea>
+      </div>
+
+      <div class="actions">
+        <span class="saved" id="savedHint">已保存</span>
+        <button id="reset">恢复默认</button>
+      </div>
+    </div>
+    <script src="options.js"></script>
+  </body>
+</html>
