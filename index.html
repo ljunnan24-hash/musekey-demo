@@ -362,28 +362,39 @@ function getStyle() { return STYLES[currentStyle]; }
 function buildEngine() {
   const s = getStyle();
 
-  // 效果器
-  const reverb = new Tone.Reverb({ decay: s.reverbDecay, wet: s.reverbWet }).toDestination();
+  // 干声总线：旋律和 pad 的直达路径（绕过混响，确保 Reverb IR 未就绪时仍有声）
+  const dryGain = new Tone.Gain(s.melodyVol > -8 ? 0.65 : 0.75).toDestination();
+
+  // 混响：wet=1 即只输出湿声，作为"发送返回"的湿端
+  const reverb = new Tone.Reverb({ decay: s.reverbDecay, wet: 1.0 });
+  const reverbGain = new Tone.Gain(s.reverbWet);  // 控制湿声量
+  reverb.connect(reverbGain);
+  reverbGain.toDestination();
+
+  // 延迟 → 混响
   const delay = new Tone.FeedbackDelay(s.delayTime, s.delayFB);
   delay.wet.value = s.delayWet;
   delay.connect(reverb);
 
-  // 旋律音色
+  // 旋律音色：干声 → dryGain，湿声 → delay → reverb
   const melodySynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: s.melodyOsc },
     envelope: s.melodyEnv,
     volume: s.melodyVol,
-  }).connect(delay);
-  melodySynth.connect(reverb);
+  });
+  melodySynth.connect(dryGain);   // 干声直达（始终有声音）
+  melodySynth.connect(delay);     // 湿声经延迟入混响
 
-  // 铺底和弦 pad
+  // 铺底和弦 pad：干声 → dryGain，湿声 → reverb
   const padSynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: s.padOsc },
     envelope: s.padEnv,
     volume: s.padVol,
-  }).connect(reverb);
+  });
+  padSynth.connect(dryGain);      // 干声直达
+  padSynth.connect(reverb);       // 湿声入混响
 
-  // 鼓
+  // 鼓：直连 destination（不经混响）
   const kickSynth = new Tone.MembraneSynth({ volume: s.kickVol }).toDestination();
   const snareSynth = new Tone.NoiseSynth({
     noise: { type: "white" },
@@ -412,7 +423,8 @@ function buildEngine() {
   }, [...Array(16).keys()], "16n").start(0);
 
   engineNodes = {
-    reverb, delay, melody: melodySynth, pad: padSynth,
+    dryGain, reverb, reverbGain, delay,
+    melody: melodySynth, pad: padSynth,
     kick: kickSynth, snare: snareSynth, hat: hatSynth,
     seqs: [chordSeq, drumSeq],
   };
@@ -422,10 +434,8 @@ function buildEngine() {
 function disposeEngine() {
   if (!engineNodes) return;
   const n = engineNodes;
-  // 停掉 Sequence
   for (const seq of n.seqs) { try { seq.stop(); seq.dispose(); } catch {} }
-  // 销毁合成器
-  for (const k of ["melody","pad","kick","snare","hat","reverb","delay"]) {
+  for (const k of ["melody","pad","kick","snare","hat","reverb","reverbGain","dryGain","delay"]) {
     try { n[k].dispose(); } catch {}
   }
   engineNodes = null;
