@@ -32,6 +32,17 @@
   .tag { color: var(--muted); margin-top: 8px; font-size: 1rem; }
   .vibe { margin-top: 18px; color: var(--accent2); font-size: .95rem; letter-spacing: 1px; }
 
+  .styles { margin-top: 14px; display: flex; gap: 8px; justify-content: center; }
+  .sbtn {
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12);
+    color: var(--muted); padding: 6px 14px; border-radius: 20px;
+    font-size: .82rem; cursor: pointer; font-family: inherit;
+    transition: all .15s ease;
+  }
+  .sbtn:hover { border-color: rgba(255,255,255,.25); color: var(--fg); }
+  .sbtn.on { background: var(--accent); color: #1a172a; border-color: var(--accent);
+              box-shadow: 0 0 16px rgba(255,143,171,.3); }
+
   #keyboard { margin-top: 4vh; display: flex; flex-direction: column; gap: 12px; }
   .row { display: flex; gap: 12px; justify-content: center; }
   .key {
@@ -89,6 +100,12 @@
     <h1>KeyJam</h1>
     <div class="tag">打字即作曲 · 你不可能弹错</div>
     <div class="vibe" id="vibeLabel">VIBE · lo-fi</div>
+    <div class="styles" id="styleBtns">
+      <button class="sbtn on" data-style="lofi">Lo-fi</button>
+      <button class="sbtn" data-style="edm">EDM</button>
+      <button class="sbtn" data-style="jazz">Jazz</button>
+      <button class="sbtn" data-style="ambient">Ambient</button>
+    </div>
   </header>
 
   <div id="keyboard"></div>
@@ -104,14 +121,77 @@
         onerror="document.querySelector('#overlay p').textContent='音色引擎加载失败,请检查网络后刷新'"></script>
 <script>
 /* ============================================================
-   KeyJam — Day 1 核心
+   KeyJam — 核心
    思路:
-   - 旋律永远锁在 C 大调五声音阶 (C D E G A) → 怎么敲都不跑调
-   - 背景是 C 大调和弦进行 + lo-fi 鼓点 → 旋律永远和它和谐
+   - 旋律永远锁在五声音阶 → 怎么敲都不跑调
+   - 背景是和弦进行 + 鼓点 → 旋律永远和它和谐
    - 每次按键吸附到下一个 16 分音符 → 乱敲也踩在拍上
+   - 四种风格一键切换:lo-fi / EDM / 爵士 / 氛围
 ============================================================ */
 
-const PENTA = ["C", "D", "E", "G", "A"]; // C 大调五声音阶,叠在整段进行上怎么都好听
+// 四种音乐风格定义
+const STYLES = {
+  lofi: {
+    label: "Lo-fi", bpm: 78,
+    progression: [["C4","E4","G4","B4"],["A3","C4","E4","G4"],["F3","A3","C4","E4"],["G3","B3","D4","F4"]],
+    melodyOsc: "triangle", melodyEnv: { attack: 0.005, decay: 0.4, sustain: 0.15, release: 1.2 }, melodyVol: -6,
+    padOsc: "sine", padEnv: { attack: 0.6, decay: 0.3, sustain: 0.7, release: 1.5 }, padVol: -16,
+    kickVol: -6, snareVol: -16, snareDecay: 0.18, hatVol: -26, hatDecay: 0.04,
+    kickPat: [1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,1,0],
+    snarePat: [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
+    hatEvery: 2,
+    reverbDecay: 4, reverbWet: 0.35,
+    delayTime: "8n.", delayFB: 0.28, delayWet: 0.25,
+    colors: { accent: "#ff8fab", accent2: "#8fd3ff" },
+    blobHues: [268, 202, 322],
+  },
+  edm: {
+    label: "EDM", bpm: 128,
+    progression: [["A3","C4","E4","G4"],["F3","A3","C4","F4"],["C4","E4","G4","C5"],["G3","B3","D4","G4"]],
+    melodyOsc: "sawtooth", melodyEnv: { attack: 0.002, decay: 0.2, sustain: 0.3, release: 0.6 }, melodyVol: -4,
+    padOsc: "sawtooth", padEnv: { attack: 0.1, decay: 0.3, sustain: 0.5, release: 0.8 }, padVol: -22,
+    kickVol: -3, snareVol: -12, snareDecay: 0.25, hatVol: -22, hatDecay: 0.06,
+    kickPat: [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0],
+    snarePat: [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
+    hatEvery: 1,
+    reverbDecay: 1.5, reverbWet: 0.20,
+    delayTime: "8n.", delayFB: 0.15, delayWet: 0.15,
+    colors: { accent: "#ff2d95", accent2: "#00e5ff" },
+    blobHues: [330, 190, 280],
+  },
+  jazz: {
+    label: "Jazz", bpm: 100,
+    progression: [["D3","F3","A3","C4"],["G3","B3","D4","F4"],["C4","E4","G4","B4"],["A3","C#4","E4","G4"]],
+    melodyOsc: "triangle", melodyEnv: { attack: 0.01, decay: 0.3, sustain: 0.2, release: 0.8 }, melodyVol: -8,
+    padOsc: "triangle", padEnv: { attack: 0.3, decay: 0.2, sustain: 0.6, release: 1.0 }, padVol: -18,
+    kickVol: -8, snareVol: -18, snareDecay: 0.12, hatVol: -28, hatDecay: 0.08,
+    kickPat: [1,0,0,0, 0,0,1,0, 1,0,0,0, 0,0,0,0],
+    snarePat: [0,0,1,0, 0,0,0,0, 0,0,1,0, 0,0,0,0],
+    hatEvery: 1,
+    reverbDecay: 2.5, reverbWet: 0.25,
+    delayTime: "8n.", delayFB: 0.2, delayWet: 0.18,
+    colors: { accent: "#ffb74d", accent2: "#ffd54f" },
+    blobHues: [35, 20, 50],
+  },
+  ambient: {
+    label: "Ambient", bpm: 60,
+    progression: [["C4","E4","G4","B4"],["E3","G3","B3","D4"],["A3","C4","E4","G4"],["F3","A3","C4","E4"]],
+    melodyOsc: "sine", melodyEnv: { attack: 0.2, decay: 0.5, sustain: 0.3, release: 2.5 }, melodyVol: -10,
+    padOsc: "sine", padEnv: { attack: 1.0, decay: 0.5, sustain: 0.8, release: 3.0 }, padVol: -14,
+    kickVol: -12, snareVol: -24, snareDecay: 0.3, hatVol: -30, hatDecay: 0.15,
+    kickPat: [1,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0],
+    snarePat: [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1],
+    hatEvery: 4,
+    reverbDecay: 8, reverbWet: 0.50,
+    delayTime: "4n.", delayFB: 0.35, delayWet: 0.30,
+    colors: { accent: "#4fc3f7", accent2: "#29b6f6" },
+    blobHues: [200, 180, 220],
+  },
+};
+
+let currentStyle = "lofi";
+
+const PENTA = ["C", "D", "E", "G", "A"]; // C 大调五声音阶,所有风格共用,靠伴奏变化区分风格
 
 // 根据"音阶序号"算出音名:序号每 +5 升一个八度
 function pentaNote(index, baseOctave) {
@@ -274,21 +354,100 @@ function flashKey(k, midi, vel) {
 // 三态: false(未开始) / "loading"(初始化中) / true(就绪)
 let started = false;
 
-// 和弦进行(每小节一个和弦),全是 C 大调里的和弦
-const PROGRESSION = [
-  ["C4", "E4", "G4", "B4"],  // Cmaj7
-  ["A3", "C4", "E4", "G4"],  // Am7
-  ["F3", "A3", "C4", "E4"],  // Fmaj7
-  ["G3", "B3", "D4", "F4"],  // G7
-];
+// 持有当前引擎实例，切换风格时需要清理
+let engineNodes = null; // { reverb, delay, melody, pad, kick, snare, hat, seqs:[] }
 
-let melody, pad, kick, snare, hat;
+function getStyle() { return STYLES[currentStyle]; }
+
+function buildEngine() {
+  const s = getStyle();
+
+  // 效果器
+  const reverb = new Tone.Reverb({ decay: s.reverbDecay, wet: s.reverbWet }).toDestination();
+  const delay = new Tone.FeedbackDelay(s.delayTime, s.delayFB);
+  delay.wet.value = s.delayWet;
+  delay.connect(reverb);
+
+  // 旋律音色
+  const melodySynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: s.melodyOsc },
+    envelope: s.melodyEnv,
+    volume: s.melodyVol,
+  }).connect(delay);
+  melodySynth.connect(reverb);
+
+  // 铺底和弦 pad
+  const padSynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: s.padOsc },
+    envelope: s.padEnv,
+    volume: s.padVol,
+  }).connect(reverb);
+
+  // 鼓
+  const kickSynth = new Tone.MembraneSynth({ volume: s.kickVol }).toDestination();
+  const snareSynth = new Tone.NoiseSynth({
+    noise: { type: "white" },
+    envelope: { attack: 0.001, decay: s.snareDecay, sustain: 0 },
+    volume: s.snareVol,
+  }).toDestination();
+  const hatSynth = new Tone.NoiseSynth({
+    noise: { type: "white" },
+    envelope: { attack: 0.001, decay: s.hatDecay, sustain: 0 },
+    volume: s.hatVol,
+  }).toDestination();
+
+  // 和弦循环
+  const chordSeq = new Tone.Sequence((time, chord) => {
+    padSynth.triggerAttackRelease(chord, "1m", time);
+  }, s.progression, "1m").start(0);
+
+  // 鼓点:一小节 16 步
+  const drumSeq = new Tone.Sequence((time, i) => {
+    if (s.kickPat[i]) {
+      kickSynth.triggerAttackRelease("C1", "8n", time);
+      Tone.Draw.schedule(() => { pulse = Math.min(1.2, pulse + 0.9); }, time);
+    }
+    if (s.snarePat[i]) snareSynth.triggerAttackRelease("16n", time);
+    if (i % s.hatEvery === 0) hatSynth.triggerAttackRelease("16n", time, 0.3 + Math.random() * 0.3);
+  }, [...Array(16).keys()], "16n").start(0);
+
+  engineNodes = {
+    reverb, delay, melody: melodySynth, pad: padSynth,
+    kick: kickSynth, snare: snareSynth, hat: hatSynth,
+    seqs: [chordSeq, drumSeq],
+  };
+  return engineNodes;
+}
+
+function disposeEngine() {
+  if (!engineNodes) return;
+  const n = engineNodes;
+  // 停掉 Sequence
+  for (const seq of n.seqs) { try { seq.stop(); seq.dispose(); } catch {} }
+  // 销毁合成器
+  for (const k of ["melody","pad","kick","snare","hat","reverb","delay"]) {
+    try { n[k].dispose(); } catch {}
+  }
+  engineNodes = null;
+}
+
+function updateVisuals() {
+  const s = getStyle();
+  // 更新 CSS 变量
+  document.documentElement.style.setProperty("--accent", s.colors.accent);
+  document.documentElement.style.setProperty("--accent2", s.colors.accent2);
+  // 更新背景极光颜色
+  for (let i = 0; i < blobs.length && i < s.blobHues.length; i++) {
+    blobs[i].hue = s.blobHues[i];
+  }
+  // 更新 vibe 标签
+  document.getElementById("vibeLabel").textContent = "VIBE · " + s.label.toLowerCase();
+}
 
 async function start() {
   if (started) return;
   started = "loading";
 
-  // 检查 Tone.js 是否已加载
   if (typeof Tone === "undefined") {
     document.querySelector("#overlay p").textContent = "音色引擎加载中,请稍等再试…";
     started = false;
@@ -300,63 +459,13 @@ async function start() {
 
   try {
     await Tone.start();
-    Tone.Transport.bpm.value = 78;
-
-    // 效果器:混响 + 延迟,lo-fi 的灵魂
-    const reverb = new Tone.Reverb({ decay: 4, wet: 0.35 }).toDestination();
-    const delay = new Tone.FeedbackDelay("8n.", 0.28);
-    delay.wet.value = 0.25;
-    delay.connect(reverb);
-
-    // 旋律音色:柔和的钟琴 / 电钢感
-    melody = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: "triangle" },
-      envelope: { attack: 0.005, decay: 0.4, sustain: 0.15, release: 1.2 },
-      volume: -6,
-    }).connect(delay);
-    melody.connect(reverb);
-
-    // 铺底和弦 pad
-    pad = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: "sine" },
-      envelope: { attack: 0.6, decay: 0.3, sustain: 0.7, release: 1.5 },
-      volume: -16,
-    }).connect(reverb);
-
-    // 鼓
-    kick = new Tone.MembraneSynth({ volume: -6 }).toDestination();
-    snare = new Tone.NoiseSynth({
-      noise: { type: "white" },
-      envelope: { attack: 0.001, decay: 0.18, sustain: 0 },
-      volume: -16,
-    }).toDestination();
-    hat = new Tone.NoiseSynth({
-      noise: { type: "white" },
-      envelope: { attack: 0.001, decay: 0.04, sustain: 0 },
-      volume: -26,
-    }).toDestination();
-
-    // 和弦循环:每小节换一个和弦
-    new Tone.Sequence((time, chord) => {
-      pad.triggerAttackRelease(chord, "1m", time);
-    }, PROGRESSION, "1m").start(0);
-
-    // 鼓点:一小节 16 步
-    const K = [1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,1,0]; // 底鼓
-    const S = [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0]; // 军鼓在 2、4 拍
-    new Tone.Sequence((time, i) => {
-      if (K[i]) {
-        kick.triggerAttackRelease("C1", "8n", time);
-        Tone.Draw.schedule(() => { pulse = Math.min(1.2, pulse + 0.9); }, time);
-      }
-      if (S[i]) snare.triggerAttackRelease("16n", time);
-      if (i % 2 === 0) hat.triggerAttackRelease("16n", time, 0.3 + Math.random() * 0.3); // 八分軽踩镲
-    }, [...Array(16).keys()], "16n").start(0);
-
+    const s = getStyle();
+    Tone.Transport.bpm.value = s.bpm;
+    buildEngine();
+    updateVisuals();
     Tone.Transport.start();
     started = true;
   } catch (e) {
-    // 初始化失败:恢复遮罩,显示错误
     console.error("KeyJam 音频启动失败:", e);
     started = false;
     overlayEl.style.display = "flex";
@@ -364,14 +473,48 @@ async function start() {
   }
 }
 
+async function switchStyle(key) {
+  if (started !== true || currentStyle === key) return;
+  currentStyle = key;
+
+  // 更新按钮激活态
+  document.querySelectorAll(".sbtn").forEach((b) => b.classList.toggle("on", b.dataset.style === key));
+
+  // 停止并清理旧引擎
+  Tone.Transport.stop();
+  disposeEngine();
+
+  // 用新风格重建
+  const s = getStyle();
+  Tone.Transport.bpm.value = s.bpm;
+  buildEngine();
+  updateVisuals();
+  Tone.Transport.start();
+}
+
+// 风格按钮事件
+document.querySelectorAll(".sbtn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const key = btn.dataset.style;
+    if (!key || currentStyle === key) return;
+    // 更新按钮激活态
+    document.querySelectorAll(".sbtn").forEach((b) => b.classList.toggle("on", b.dataset.style === key));
+    switchStyle(key);
+  });
+});
+
+// 风格切换暴露到全局
+window.switchStyle = switchStyle;
+
 /* ---------------- 键盘输入 ---------------- */
 function playKey(k) {
   const note = keyToNote[k];
   if (!note) return;
+  if (!engineNodes || !engineNodes.melody) return;
   // 节奏吸附:落到下一个 16 分音符,乱敲也踩在拍上
   const time = Tone.Transport.nextSubdivision("16n");
   const vel = 0.7 + Math.random() * 0.3;
-  melody.triggerAttackRelease(note, "8n", time, vel);
+  engineNodes.melody.triggerAttackRelease(note, "8n", time, vel);
 
   // 视觉反馈与声音同步落在那一拍
   const midi = Tone.Frequency(note).toMidi();
