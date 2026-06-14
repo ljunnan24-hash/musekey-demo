@@ -85,7 +85,7 @@ const readState = () => {
   return {
     widget: !!widget,
     dataState: widget?.getAttribute("data-state") ?? null,
-    musicHit: widget?.getAttribute("data-music-hit") ?? null,
+    musicHitPhase: widget?.getAttribute("data-music-hit-phase") ?? null,
     musicStyle: widget?.getAttribute("data-music-style") ?? null,
     hasStyleBubble: !!shadow?.querySelector(".maestro-style-bubble"),
     hasAnimationRule: /maestro-fast-lean|maestro-left-hand-fast|face-focused/.test(
@@ -172,9 +172,16 @@ if (shadow) {
   const duringMusic = readState();
   await new Promise((r) => setTimeout(r, 270));
   const afterMusic = readState();
-  console.log("KeyJam note 后 data-state:", afterMusic.dataState, "| hit pulse:", duringMusic.musicHit);
   console.log(
-    afterMusic.dataState && afterMusic.dataState.startsWith("typing") && duringMusic.musicHit === "true"
+    "KeyJam note 后 data-state:",
+    afterMusic.dataState,
+    "| hit phase:",
+    duringMusic.musicHitPhase,
+  );
+  console.log(
+    afterMusic.dataState &&
+      afterMusic.dataState.startsWith("typing") &&
+      duringMusic.musicHitPhase !== "0"
       ? "✅ 音乐事件驱动演奏状态正常"
       : "❌ 音乐事件未驱动演奏状态",
   );

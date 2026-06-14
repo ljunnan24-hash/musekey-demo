@@ -12,6 +12,7 @@ import {
 
 const ROOT_ID = `maestro-stickman-root-${chrome.runtime.id}`;
 const BASE_BOX = 160; // scale=1 时的基础尺寸 px
+const TYPING_PULSE_EVENT = "MAESTRO_STICKMAN_TYPING_PULSE";
 
 // 防止同一页面被重复注入（部分站点会多次执行内容脚本）
 interface MaestroWindow {
@@ -133,7 +134,9 @@ if (!win.__maestroStickmanInjected) {
   document.addEventListener(
     "keydown",
     (e) => {
-      if (isTypingTarget(e.target)) typingTracker.record();
+      if (!isTypingTarget(e.target)) return;
+      typingTracker.record();
+      window.dispatchEvent(new CustomEvent(TYPING_PULSE_EVENT));
     },
     true,
   );

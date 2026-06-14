@@ -12,6 +12,7 @@ const RIV_URL = chrome.runtime.getURL("maestro_stickman.riv");
 const KEYJAM_EVENT = "KEYJAM_MAESTRO_EVENT";
 const KEYJAM_ACK = "KEYJAM_MAESTRO_ACK";
 const KEYJAM_COMMAND = "MAESTRO_KEYJAM_COMMAND";
+const TYPING_PULSE_EVENT = "MAESTRO_STICKMAN_TYPING_PULSE";
 
 type MusicStyle = "lofi" | "edm" | "jazz" | "ambient";
 
@@ -39,10 +40,38 @@ export default function StickmanWidget() {
   const [keyJamConnected, setKeyJamConnected] = useState(false);
   const [pageEnabled, setPageEnabled] = useState(true);
   const [musicStyle, setMusicStyle] = useState<MusicStyle>("lofi");
-  const [musicHit, setMusicHit] = useState(false);
+  const [musicHitPhase, setMusicHitPhase] = useState<0 | 1 | 2>(0);
   // null = 检测中；true = 有 .riv 走 Rive；false = 走 SVG 占位
   const [hasRiv, setHasRiv] = useState<boolean | null>(null);
   const musicHitTimer = useRef<number | null>(null);
+  const frameUpdate = useRef<number | null>(null);
+  const pendingMusicHit = useRef(false);
+
+  const refreshCharacterState = () => {
+    const now = Date.now();
+    const next = characterState.getState(
+      typingTracker.level(now),
+      typingTracker.idleSeconds(now),
+      now,
+    );
+    setState((current) => (current === next ? current : next));
+  };
+
+  const scheduleWidgetPulse = (withMusicHit = false) => {
+    pendingMusicHit.current = pendingMusicHit.current || withMusicHit;
+    if (frameUpdate.current !== null) return;
+
+    frameUpdate.current = window.requestAnimationFrame(() => {
+      frameUpdate.current = null;
+      refreshCharacterState();
+
+      if (!pendingMusicHit.current) return;
+      pendingMusicHit.current = false;
+      setMusicHitPhase((phase) => (phase === 1 ? 2 : 1));
+      if (musicHitTimer.current) window.clearTimeout(musicHitTimer.current);
+      musicHitTimer.current = window.setTimeout(() => setMusicHitPhase(0), 150);
+    });
+  };
 
   // 检测 .riv 是否存在（HEAD 请求；失败/不存在 → fallback）
   useEffect(() => {
@@ -72,9 +101,15 @@ export default function StickmanWidget() {
       const data = event.data as KeyJamEvent;
       if (!data || data.type !== KEYJAM_EVENT || data.version !== 1) return;
 
-      setKeyJamConnected(true);
-      if (isMusicStyle(data.style)) setMusicStyle(data.style);
-      if (typeof data.enabled === "boolean") setPageEnabled(data.enabled);
+      setKeyJamConnected((connected) => connected || true);
+      const nextStyle = data.style;
+      if (isMusicStyle(nextStyle)) {
+        setMusicStyle((style) => (style === nextStyle ? style : nextStyle));
+      }
+      const nextEnabled = data.enabled;
+      if (typeof nextEnabled === "boolean") {
+        setPageEnabled((enabled) => (enabled === nextEnabled ? enabled : nextEnabled));
+      }
 
       switch (data.event) {
         case "hello":
@@ -83,9 +118,7 @@ export default function StickmanWidget() {
           break;
         case "note":
           typingTracker.record();
-          setMusicHit(true);
-          if (musicHitTimer.current) window.clearTimeout(musicHitTimer.current);
-          musicHitTimer.current = window.setTimeout(() => setMusicHit(false), 170);
+          scheduleWidgetPulse(true);
           break;
         case "style":
         case "start":
@@ -95,31 +128,29 @@ export default function StickmanWidget() {
           break;
       }
     };
+    const onTypingPulse = () => scheduleWidgetPulse(false);
 
     window.addEventListener("message", onMessage);
+    window.addEventListener(TYPING_PULSE_EVENT, onTypingPulse);
     return () => {
       window.removeEventListener("message", onMessage);
+      window.removeEventListener(TYPING_PULSE_EVENT, onTypingPulse);
+      if (frameUpdate.current !== null) window.cancelAnimationFrame(frameUpdate.current);
       if (musicHitTimer.current) window.clearTimeout(musicHitTimer.current);
     };
   }, []);
 
-  // 周期性重算状态：空闲计时（resting / sleeping）需要随时间推进，即便没有输入
+  // 空闲计时（resting / sleeping）低频推进；输入和音乐 note 走 requestAnimationFrame 即时更新。
   useEffect(() => {
     const id = window.setInterval(() => {
-      const now = Date.now();
-      const level = typingTracker.level(now);
-      const idle = typingTracker.idleSeconds(now);
-      setState(characterState.getState(level, idle, now));
-    }, 200);
+      refreshCharacterState();
+    }, 500);
     return () => window.clearInterval(id);
   }, []);
 
   const handleClick = () => {
     characterState.onClick();
-    const now = Date.now();
-    setState(
-      characterState.getState(typingTracker.level(now), typingTracker.idleSeconds(now), now),
-    );
+    refreshCharacterState();
   };
 
   const selectStyle = (style: MusicStyle) => {
@@ -139,7 +170,7 @@ export default function StickmanWidget() {
       data-state={state}
       data-keyjam-connected={keyJamConnected ? "true" : "false"}
       data-music-style={musicStyle}
-      data-music-hit={musicHit ? "true" : "false"}
+      data-music-hit-phase={musicHitPhase}
       role="button"
       tabIndex={0}
       aria-label={`Maestro Stickman (${state})`}

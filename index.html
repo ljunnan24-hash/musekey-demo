@@ -260,6 +260,7 @@ const MAESTRO_ACK = "KEYJAM_MAESTRO_ACK";
 const MAESTRO_COMMAND = "MAESTRO_KEYJAM_COMMAND";
 const MAESTRO_STORAGE_KEY = "keyjam_maestro_enabled";
 const MAESTRO_ACK_WAIT_MS = 800;
+const MAESTRO_HIGH_FREQ_EVENTS = new Set(["note", "beat"]);
 const maestroToggle = document.getElementById("maestroToggle");
 const maestroStatus = document.getElementById("maestroStatus");
 let maestroEnabled = localStorage.getItem(MAESTRO_STORAGE_KEY) !== "false";
@@ -282,6 +283,8 @@ function updateMaestroUI() {
 }
 
 function postMaestro(event, payload = {}) {
+  if (!maestroEnabled && event !== "pageEnabled") return;
+  if (MAESTRO_HIGH_FREQ_EVENTS.has(event) && !maestroDetected) return;
   window.postMessage({
     type: MAESTRO_EVENT,
     version: 1,
@@ -404,7 +407,7 @@ const canvas = document.getElementById("viz");
 const ctx = canvas.getContext("2d");
 let W, H, dpr;
 function resize() {
-  dpr = Math.min(2, window.devicePixelRatio || 1);
+  dpr = Math.min(1.5, window.devicePixelRatio || 1);
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = W * dpr; canvas.height = H * dpr;
   canvas.style.width = W + "px"; canvas.style.height = H + "px";
@@ -416,6 +419,10 @@ window.addEventListener("resize", resize);
 const orbs = [];   // 飘升的光球
 const rings = [];  // 扩散的光圈(Brian Eno Bloom 那种)
 let pulse = 0;     // 跟随底鼓的能量脉冲
+let lastVizFrame = 0;
+const VIZ_FRAME_MS = 1000 / 45;
+const MAX_ORBS = 72;
+const MAX_RINGS = 28;
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -436,8 +443,9 @@ function spawnNote(x, y, midi, vel) {
   const c = noteColor(midi);
   // 一圈扩散的光环
   rings.push({ x, y, r: 8, grow: 1.6 + vel * 1.4, life: 64, maxLife: 64, c });
+  if (rings.length > MAX_RINGS) rings.splice(0, rings.length - MAX_RINGS);
   // 几颗柔和上升的光球(数量随力度)
-  const n = 3 + Math.floor(vel * 4);
+  const n = 2 + Math.floor(vel * 3);
   for (let i = 0; i < n; i++) {
     const life = 70 + Math.random() * 55;
     orbs.push({
@@ -449,9 +457,13 @@ function spawnNote(x, y, midi, vel) {
       c, life, maxLife: life,
     });
   }
+  if (orbs.length > MAX_ORBS) orbs.splice(0, orbs.length - MAX_ORBS);
 }
 
 function render(ts) {
+  requestAnimationFrame(render);
+  if (document.hidden || ts - lastVizFrame < VIZ_FRAME_MS) return;
+  lastVizFrame = ts;
   const maxD = Math.max(W, H);
   ctx.clearRect(0, 0, W, H);
   ctx.globalCompositeOperation = "lighter";
@@ -501,7 +513,6 @@ function render(ts) {
   }
 
   ctx.globalCompositeOperation = "source-over";
-  requestAnimationFrame(render);
 }
 requestAnimationFrame(render);
 
@@ -718,17 +729,15 @@ function playKey(k) {
   const note = keyToNote[k];
   if (!note) return;
   if (!engineNodes || !engineNodes.melody) { console.log("[KJ] playKey: no engine/melody"); return; }
-  const time = Tone.Transport.nextSubdivision("16n");
+  const time = Tone.now();
   const vel = 0.7 + Math.random() * 0.3;
   engineNodes.melody.triggerAttackRelease(note, "8n", time, vel);
   playCount++;
-  if (playCount <= 3) console.log("[KJ] playKey:", k, "→", note, "@", time.toFixed(2), "count:", playCount);
+  if (playCount <= 3) console.log("[KJ] playKey:", k, "→", note, "now", "count:", playCount);
 
   const midi = Tone.Frequency(note).toMidi();
-  Tone.Draw.schedule(() => {
-    flashKey(k, midi, vel);
-    postMaestro("note", { note, midi, velocity: vel, key: k, style: currentStyle });
-  }, time);
+  flashKey(k, midi, vel);
+  postMaestro("note", { note, midi, velocity: vel, key: k, style: currentStyle });
 }
 
 document.addEventListener("keydown", (e) => {

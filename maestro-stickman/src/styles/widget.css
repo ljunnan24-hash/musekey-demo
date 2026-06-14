@@ -369,7 +369,13 @@
   35% { fill: #ffd4e4; transform: scaleY(0.72); }
 }
 
-@keyframes maestro-key-hit {
+@keyframes maestro-key-hit-a {
+  0% { fill: #f7f2ff; transform: scaleY(1); }
+  45% { fill: #ffbfd3; transform: scaleY(0.66); }
+  100% { fill: #f7f2ff; transform: scaleY(1); }
+}
+
+@keyframes maestro-key-hit-b {
   0% { fill: #f7f2ff; transform: scaleY(1); }
   45% { fill: #ffbfd3; transform: scaleY(0.66); }
   100% { fill: #f7f2ff; transform: scaleY(1); }
@@ -483,8 +489,12 @@
   animation: maestro-key-flash 0.6s ease-in-out infinite;
 }
 
-.maestro-stickman-widget[data-music-hit="true"] .white-key {
-  animation: maestro-key-hit 0.18s ease-out 1;
+.maestro-stickman-widget[data-music-hit-phase="1"] .white-key {
+  animation: maestro-key-hit-a 0.18s ease-out 1;
+}
+
+.maestro-stickman-widget[data-music-hit-phase="2"] .white-key {
+  animation: maestro-key-hit-b 0.18s ease-out 1;
 }
 
 .maestro-stickman-widget[data-state="typing_slow"] .white-key {
