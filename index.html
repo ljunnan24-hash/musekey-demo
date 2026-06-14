@@ -100,7 +100,8 @@
 
   <footer>KeyJam · hackathon demo</footer>
 
-<script src="https://unpkg.com/tone@14.8.49/build/Tone.js"></script>
+<script src="https://unpkg.com/tone@14.8.49/build/Tone.js"
+        onerror="document.querySelector('#overlay p').textContent='音色引擎加载失败,请检查网络后刷新'"></script>
 <script>
 /* ============================================================
    KeyJam — Day 1 核心
@@ -270,6 +271,7 @@ function flashKey(k, midi, vel) {
 }
 
 /* ---------------- 音频引擎 ---------------- */
+// 三态: false(未开始) / "loading"(初始化中) / true(就绪)
 let started = false;
 
 // 和弦进行(每小节一个和弦),全是 C 大调里的和弦
@@ -284,64 +286,82 @@ let melody, pad, kick, snare, hat;
 
 async function start() {
   if (started) return;
-  started = true;
-  document.getElementById("overlay").style.display = "none";
+  started = "loading";
 
-  await Tone.start();
-  Tone.Transport.bpm.value = 78;
+  // 检查 Tone.js 是否已加载
+  if (typeof Tone === "undefined") {
+    document.querySelector("#overlay p").textContent = "音色引擎加载中,请稍等再试…";
+    started = false;
+    return;
+  }
 
-  // 效果器:混响 + 延迟,lo-fi 的灵魂
-  const reverb = new Tone.Reverb({ decay: 4, wet: 0.35 }).toDestination();
-  const delay = new Tone.FeedbackDelay("8n.", 0.28);
-  delay.wet.value = 0.25;
-  delay.connect(reverb);
+  const overlayEl = document.getElementById("overlay");
+  overlayEl.style.display = "none";
 
-  // 旋律音色:柔和的钟琴 / 电钢感
-  melody = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: "triangle" },
-    envelope: { attack: 0.005, decay: 0.4, sustain: 0.15, release: 1.2 },
-    volume: -6,
-  }).connect(delay);
-  melody.connect(reverb);
+  try {
+    await Tone.start();
+    Tone.Transport.bpm.value = 78;
 
-  // 铺底和弦 pad
-  pad = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: "sine" },
-    envelope: { attack: 0.6, decay: 0.3, sustain: 0.7, release: 1.5 },
-    volume: -16,
-  }).connect(reverb);
+    // 效果器:混响 + 延迟,lo-fi 的灵魂
+    const reverb = new Tone.Reverb({ decay: 4, wet: 0.35 }).toDestination();
+    const delay = new Tone.FeedbackDelay("8n.", 0.28);
+    delay.wet.value = 0.25;
+    delay.connect(reverb);
 
-  // 鼓
-  kick = new Tone.MembraneSynth({ volume: -6 }).toDestination();
-  snare = new Tone.NoiseSynth({
-    noise: { type: "white" },
-    envelope: { attack: 0.001, decay: 0.18, sustain: 0 },
-    volume: -16,
-  }).toDestination();
-  hat = new Tone.NoiseSynth({
-    noise: { type: "white" },
-    envelope: { attack: 0.001, decay: 0.04, sustain: 0 },
-    volume: -26,
-  }).toDestination();
+    // 旋律音色:柔和的钟琴 / 电钢感
+    melody = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.005, decay: 0.4, sustain: 0.15, release: 1.2 },
+      volume: -6,
+    }).connect(delay);
+    melody.connect(reverb);
 
-  // 和弦循环:每小节换一个和弦
-  new Tone.Sequence((time, chord) => {
-    pad.triggerAttackRelease(chord, "1m", time);
-  }, PROGRESSION, "1m").start(0);
+    // 铺底和弦 pad
+    pad = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.6, decay: 0.3, sustain: 0.7, release: 1.5 },
+      volume: -16,
+    }).connect(reverb);
 
-  // 鼓点:一小节 16 步
-  const K = [1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,1,0]; // 底鼓
-  const S = [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0]; // 军鼓在 2、4 拍
-  new Tone.Sequence((time, i) => {
-    if (K[i]) {
-      kick.triggerAttackRelease("C1", "8n", time);
-      Tone.Draw.schedule(() => { pulse = Math.min(1.2, pulse + 0.9); }, time);
-    }
-    if (S[i]) snare.triggerAttackRelease("16n", time);
-    if (i % 2 === 0) hat.triggerAttackRelease("16n", time, 0.3 + Math.random() * 0.3); // 八分軽踩镲
-  }, [...Array(16).keys()], "16n").start(0);
+    // 鼓
+    kick = new Tone.MembraneSynth({ volume: -6 }).toDestination();
+    snare = new Tone.NoiseSynth({
+      noise: { type: "white" },
+      envelope: { attack: 0.001, decay: 0.18, sustain: 0 },
+      volume: -16,
+    }).toDestination();
+    hat = new Tone.NoiseSynth({
+      noise: { type: "white" },
+      envelope: { attack: 0.001, decay: 0.04, sustain: 0 },
+      volume: -26,
+    }).toDestination();
 
-  Tone.Transport.start();
+    // 和弦循环:每小节换一个和弦
+    new Tone.Sequence((time, chord) => {
+      pad.triggerAttackRelease(chord, "1m", time);
+    }, PROGRESSION, "1m").start(0);
+
+    // 鼓点:一小节 16 步
+    const K = [1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,1,0]; // 底鼓
+    const S = [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0]; // 军鼓在 2、4 拍
+    new Tone.Sequence((time, i) => {
+      if (K[i]) {
+        kick.triggerAttackRelease("C1", "8n", time);
+        Tone.Draw.schedule(() => { pulse = Math.min(1.2, pulse + 0.9); }, time);
+      }
+      if (S[i]) snare.triggerAttackRelease("16n", time);
+      if (i % 2 === 0) hat.triggerAttackRelease("16n", time, 0.3 + Math.random() * 0.3); // 八分軽踩镲
+    }, [...Array(16).keys()], "16n").start(0);
+
+    Tone.Transport.start();
+    started = true;
+  } catch (e) {
+    // 初始化失败:恢复遮罩,显示错误
+    console.error("KeyJam 音频启动失败:", e);
+    started = false;
+    overlayEl.style.display = "flex";
+    document.querySelector("#overlay p").textContent = "音频启动失败,请刷新页面重试";
+  }
 }
 
 /* ---------------- 键盘输入 ---------------- */
@@ -359,8 +379,9 @@ function playKey(k) {
 }
 
 document.addEventListener("keydown", (e) => {
-  if (!started) { start(); return; }
-  if (e.repeat) return;               // 长按不连发
+  if (started === "loading") return;          // 音频还在初始化,等一等
+  if (!started) { start(); return; }          // 首次按键触发启动
+  if (e.repeat) return;                       // 长按不连发
   const k = e.key.toLowerCase();
   if (keyToNote[k]) { e.preventDefault(); playKey(k); }
 });
