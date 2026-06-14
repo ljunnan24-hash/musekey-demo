@@ -44,8 +44,8 @@
               box-shadow: 0 0 16px rgba(255,143,171,.3); }
 
   .maestro-panel {
+    display: none;
     margin-top: 12px;
-    display: flex;
     gap: 10px;
     align-items: center;
     justify-content: center;
@@ -272,9 +272,10 @@ const MAESTRO_COMMAND = "MAESTRO_KEYJAM_COMMAND";
 const MAESTRO_STORAGE_KEY = "keyjam_maestro_enabled";
 const MAESTRO_ACK_WAIT_MS = 800;
 const MAESTRO_HIGH_FREQ_EVENTS = new Set(["note", "beat"]);
+const MAESTRO_PAGE_BRIDGE = false;
 const maestroToggle = document.getElementById("maestroToggle");
 const maestroStatus = document.getElementById("maestroStatus");
-let maestroEnabled = localStorage.getItem(MAESTRO_STORAGE_KEY) !== "false";
+let maestroEnabled = MAESTRO_PAGE_BRIDGE && localStorage.getItem(MAESTRO_STORAGE_KEY) !== "false";
 let maestroDetected = false;
 let maestroAckTimer = null;
 
@@ -294,6 +295,7 @@ function updateMaestroUI() {
 }
 
 function postMaestro(event, payload = {}) {
+  if (!MAESTRO_PAGE_BRIDGE) return;
   if (!maestroEnabled && event !== "pageEnabled") return;
   if (MAESTRO_HIGH_FREQ_EVENTS.has(event) && !maestroDetected) return;
   window.postMessage({

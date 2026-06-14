@@ -1,6 +1,7 @@
 import { createRoot, type Root } from "react-dom/client";
 import StickmanWidget from "./StickmanWidget";
 import { typingTracker, isTypingTarget } from "../logic/typingTracker";
+import { typingMusic } from "../logic/typingMusic";
 import widgetCss from "../styles/widget.css?inline";
 import {
   loadSettings,
@@ -13,13 +14,32 @@ import {
 const ROOT_ID = `maestro-stickman-root-${chrome.runtime.id}`;
 const BASE_BOX = 160; // scale=1 时的基础尺寸 px
 const TYPING_PULSE_EVENT = "MAESTRO_STICKMAN_TYPING_PULSE";
+const KEYJAM_LOCAL_PORT = "3000";
 
 // 防止同一页面被重复注入（部分站点会多次执行内容脚本）
 interface MaestroWindow {
   __maestroStickmanInjected?: boolean;
 }
 const win = window as unknown as MaestroWindow;
-if (!win.__maestroStickmanInjected) {
+
+function isKeyJamPage(): boolean {
+  try {
+    const url = new URL(location.href);
+    return (
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
+      url.port === KEYJAM_LOCAL_PORT
+    );
+  } catch {
+    return false;
+  }
+}
+
+function allowsTypingSound(target: EventTarget | null): boolean {
+  if (target instanceof HTMLInputElement && target.type === "password") return false;
+  return true;
+}
+
+if (!win.__maestroStickmanInjected && !isKeyJamPage()) {
   win.__maestroStickmanInjected = true;
 
   // 注入作用域内的运行态
@@ -137,6 +157,9 @@ if (!win.__maestroStickmanInjected) {
       if (!isTypingTarget(e.target)) return;
       typingTracker.record();
       window.dispatchEvent(new CustomEvent(TYPING_PULSE_EVENT));
+      if (!e.repeat && allowsTypingSound(e.target)) {
+        void typingMusic.play();
+      }
     },
     true,
   );
