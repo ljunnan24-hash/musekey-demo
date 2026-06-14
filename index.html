@@ -117,9 +117,21 @@
 
   <footer>KeyJam · hackathon demo</footer>
 
-<script src="https://unpkg.com/tone@14.8.49/build/Tone.js"
-        onerror="document.querySelector('#overlay p').textContent='音色引擎加载失败,请检查网络后刷新'"></script>
 <script>
+// 延迟加载 Tone.js，等用户点击后再初始化，避免 Chrome autoplay 阻止
+let _toneReady = false;
+function loadTone() {
+  return new Promise((resolve, reject) => {
+    if (_toneReady) return resolve();
+    if (typeof Tone !== "undefined") { _toneReady = true; return resolve(); }
+    const s = document.createElement("script");
+    s.src = "https://unpkg.com/tone@14.8.49/build/Tone.js";
+    s.onload = () => { _toneReady = true; resolve(); };
+    s.onerror = () => { reject(new Error("Tone.js CDN 加载失败")); };
+    document.head.appendChild(s);
+  });
+}
+
 /* ============================================================
    KeyJam — 核心
    思路:
@@ -464,18 +476,15 @@ async function start() {
   started = "loading";
   console.log("[KJ] start: begin");
 
-  if (typeof Tone === "undefined") {
-    console.log("[KJ] start: Tone undefined");
-    document.querySelector("#overlay p").textContent = "音色引擎加载中,请稍等再试…";
-    started = false;
-    return;
-  }
-  console.log("[KJ] start: Tone version", Tone.version);
-
   const overlayEl = document.getElementById("overlay");
   overlayEl.style.display = "none";
 
   try {
+    // 延迟加载 Tone.js（用户已点击 → AudioContext 不会被 Chrome 阻止）
+    console.log("[KJ] start: loading Tone.js…");
+    await loadTone();
+    console.log("[KJ] start: Tone version", Tone.version);
+
     console.log("[KJ] start: calling Tone.start()…");
     await Tone.start();
     console.log("[KJ] start: Tone.start() done, state:", Tone.getContext().state);
