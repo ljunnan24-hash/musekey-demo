@@ -158,7 +158,7 @@ if (!win.__maestroStickmanInjected && !isKeyJamPage()) {
       typingTracker.record();
       window.dispatchEvent(new CustomEvent(TYPING_PULSE_EVENT));
       if (!e.repeat && allowsTypingSound(e.target)) {
-        void typingMusic.play();
+        void typingMusic.play(e.key);
       }
     },
     true,
