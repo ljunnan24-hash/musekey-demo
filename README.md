@@ -1,67 +1,127 @@
-# KeyJam · 笔记本就是吉他
+# MuseKey / KeyJam
 
-把笔记本变成一把「自动挡吉他」—— **键盘就是扫弦**。
+**Turn typing into music.** MuseKey is a browser-based music playground where every keystroke becomes a note, a beat, and a tiny performance. The web demo gives you an expressive keyboard instrument; the companion **Maestro Stickman** Chrome extension brings a floating musician to ordinary writing surfaces.
 
-载入一首你自己拥有的歌,系统自动按小节把它切段,你**每按一下键 = 弹出一段**,用敲击的节奏去"演奏"这首歌的律动。可选**去人声**得到伴奏轨,方便跟唱。
+![KeyJam playing screen](docs/screenshots/keyjam-playing.png)
 
-> 完整产品需求见 [docs/PRD.md](docs/PRD.md);开发规范见 [CLAUDE.md](CLAUDE.md)。
+## Why Judges Should Try It
 
-## 运行
+Most music tools ask people to learn a new interface before they can feel creative. KeyJam starts from the one instrument everyone already has muscle memory for: the keyboard.
 
-需要 Node 18+(自带 `fetch`)。**运行无第三方依赖**(devDependencies 仅供 lint/format)。
+- **Instant gratification:** click once, type anything, and hear a musical phrase.
+- **Low-friction creativity:** no MIDI controller, DAW, account, or upload required.
+- **Character feedback:** Maestro Stickman reacts to typing speed, mood, clicks, hover, and music style.
+- **Privacy-first:** typing content is never read, stored, or uploaded; the app only reacts to keyboard timing/events.
+- **Hackathon-ready scope:** web instrument + Chrome extension + shared sound/style language.
+
+## Demo Screens
+
+![KeyJam start screen](docs/screenshots/keyjam-home.png)
+
+KeyJam starts as a quiet stage: click anywhere, then type on `QWERTY` rows to play different note ranges.
+
+![KeyJam performance screen](docs/screenshots/keyjam-playing.png)
+
+During performance, keys glow with the notes you trigger. Styles include **Lo-fi**, **EDM**, **Jazz**, and **Ambient**.
+
+## What It Does
+
+### KeyJam Web App
+
+- Maps keyboard rows to musical ranges:
+  - `QWERTYUIOP`: higher notes
+  - `ASDFGHJKL`: middle notes
+  - `ZXCVBNM`: lower notes
+- Uses Tone.js/Web Audio for real-time synth playback.
+- Lets users switch between Lo-fi, EDM, Jazz, and Ambient vibes.
+- Shows animated key feedback so typing feels like playing an instrument.
+
+### Maestro Stickman Chrome Extension
+
+- Injects a floating stickman musician into ordinary webpages.
+- Reacts to typing states: idle, slow typing, normal typing, fast typing, resting, sleeping, clicked, annoyed.
+- Plays the same style family as KeyJam while you type outside the demo page.
+- Hovering opens a style bubble so the user can choose the musical mood.
+- Avoids password fields and does not inspect typed content.
+
+## Architecture
+
+```text
+musekey-demo/
+├── index.html                 # KeyJam web instrument
+├── server.js                  # zero-dependency local static server
+├── assets/                    # demo audio + public-domain song metadata
+├── docs/
+│   ├── PRD.md                 # product requirements
+│   └── screenshots/           # README demo images
+└── maestro-stickman/          # Chrome MV3 extension
+    ├── src/content/           # injected React widget
+    ├── src/logic/             # typing state + music logic
+    ├── src/styles/            # stickman and piano animations
+    └── dist/                  # built extension, loaded in Chrome
+```
+
+## Run The Web Demo
 
 ```bash
-npm start          # = node server.js,打开 http://localhost:3000
-npm run dev        # node --watch,改完自动重启
+npm install
+npm start
 ```
 
-音频段模式**不需要任何 API key**;`.env` / DeepSeek 仅供仓库里闲置的"和弦实验接口",可忽略。
+Open [http://localhost:3000](http://localhost:3000), click the stage once, then type.
 
-## 玩法
+## Load The Chrome Extension
 
-1. 点击开始 → **载入音频**(上传 / 拖入)或点 **示例曲**
-2. 立体声文件可开 **「去人声」**(中置消除,得到粗略伴奏)
-3. **按空格 / 任意字母键 / 点 SPACE 键帽** → 每下弹一段;`BPM ±` 微调切段,`SEG` 看进度
-
-## 技术
-
-- **前端** `index.html`:单文件,纯 Web Audio(解码 / 中置消除去人声 / 按段播放)+ Canvas(吉他弦背景 + 波形条)+ [`web-audio-beat-detector`](https://github.com/chrisguttandin/web-audio-beat-detector)(CDN)估 BPM。音频只在本地浏览器处理,不上传。
-- **后端** `server.js`:零依赖 Node,静态托管。另有**闲置接口**:`/api/song`(公共版权曲库)、`/api/chords`(DeepSeek 和弦实验)。
-- **资源**:`assets/demo-loop.wav`(`scripts/make-demo.js` 合成的原创免版税示例曲)、`assets/songs.json`(公共版权曲库)。
-
-## 项目结构
-
-```
-.
-├── index.html        # 前端单文件:UI + Web Audio + Canvas
-├── server.js         # Node 后端:静态托管 + 闲置接口
-├── assets/           # demo-loop.wav(原创示例) / songs.json(公共版权曲库)
-├── scripts/          # make-demo.js(合成示例曲)
-├── docs/PRD.md       # 产品需求文档
-├── package.json · eslint.config.js · .prettierrc · .editorconfig · .env.example
-└── CLAUDE.md · README.md
+```bash
+cd maestro-stickman
+npm install
+npm run build
 ```
 
-## 开发规范
+Then open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select:
 
-- **格式化**:Prettier(2 空格、双引号、分号、行宽 110)。提交前 `npm run format`。
-- **静态检查**:ESLint(`@eslint/js` recommended + Prettier 兼容)。`npm run lint`。
-- **风格**:中文注释说明"为什么";前端纯浏览器 API,不引框架;后端零运行依赖。
-- **密钥**:任何 key 只走服务端 `.env` / 环境变量,严禁写进前端或提交仓库。
-- 启用 lint/format 需先 `npm install`(运行 `npm start` 不需要)。
+```text
+maestro-stickman/dist
+```
 
-## 版权
+Open any ordinary webpage with an input box and start typing. The floating Maestro appears outside the KeyJam web demo so the web page stays smooth while the extension handles the companion character experience.
 
-只用**用户合法拥有的音频**做本地处理;不抓取/下载/解密受版权保护的音乐,不爬谱站、不复现版权歌词。和弦数据仅来自公共版权曲库或用户粘贴。
+## Verification
 
-## 路线图
+```bash
+npm run lint
 
-- [x] 音频段触发(自动按小节切段 + 按键弹段)
-- [x] 浏览器内去人声(中置消除)
-- [x] 乐器风 UI(吉他弦 + 实体键帽)+ 原创示例曲
-- [ ] 高质量人声分离(后端 Demucs/Spleeter 或付费 API)
-- [ ] 手动打点分段 · 保存 / 分享创作
-- [ ] 悬浮插件形态:边打字边演奏,角落辉光小宠物陪你工作
+cd maestro-stickman
+npm run build
+node scripts/repro.mjs
+```
 
----
-hackathon demo
+Current checks cover the web code style, extension build, content-script injection, typing state changes, page bridge behavior, and Maestro style interactions.
+
+## Privacy
+
+MuseKey is designed around local, ephemeral interaction:
+
+- No typed text is collected.
+- No typing history is stored.
+- No audio is uploaded by the core demo.
+- Maestro only uses key timing and key labels needed to trigger sound.
+- Password fields are ignored by the extension.
+
+## Roadmap
+
+- [x] Keyboard-to-music web demo
+- [x] Four playable styles: Lo-fi, EDM, Jazz, Ambient
+- [x] Chrome extension companion character
+- [x] Hover style picker for Maestro Stickman
+- [x] Tone.js-based extension audio with shorter note tails
+- [ ] Replace fallback SVG with a polished Rive `.riv` character
+- [ ] Add richer call-and-response phrases
+- [ ] Package a desktop companion for Word/Notes/native apps
+- [ ] Add recording and shareable performance clips
+
+## Credits
+
+Built for a hackathon prototype sprint by exploring one simple question:
+
+> What if writing itself could feel like playing music?
