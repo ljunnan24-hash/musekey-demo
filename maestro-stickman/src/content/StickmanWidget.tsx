@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRive, useStateMachineInput } from "@rive-app/react-canvas";
 import { typingTracker } from "../logic/typingTracker";
+import { typingMusic, type MusicStyle } from "../logic/typingMusic";
 import {
   characterState,
   STATE_NUMBER,
@@ -13,8 +14,7 @@ const KEYJAM_EVENT = "KEYJAM_MAESTRO_EVENT";
 const KEYJAM_ACK = "KEYJAM_MAESTRO_ACK";
 const KEYJAM_COMMAND = "MAESTRO_KEYJAM_COMMAND";
 const TYPING_PULSE_EVENT = "MAESTRO_STICKMAN_TYPING_PULSE";
-
-type MusicStyle = "lofi" | "edm" | "jazz" | "ambient";
+const STYLE_STORAGE_KEY = "maestro_stickman_music_style_v1";
 
 const STYLE_LABELS: Record<MusicStyle, string> = {
   lofi: "Lo-fi",
@@ -89,6 +89,22 @@ export default function StickmanWidget() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    chrome.storage.sync
+      .get([STYLE_STORAGE_KEY])
+      .then((got) => {
+        const savedStyle = got[STYLE_STORAGE_KEY];
+        if (cancelled || !isMusicStyle(savedStyle)) return;
+        typingMusic.setStyle(savedStyle);
+        setMusicStyle(savedStyle);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const sendAck = () => {
       window.postMessage(
         { type: KEYJAM_ACK, version: 1, installed: true, connected: true },
@@ -104,6 +120,7 @@ export default function StickmanWidget() {
       setKeyJamConnected((connected) => connected || true);
       const nextStyle = data.style;
       if (isMusicStyle(nextStyle)) {
+        typingMusic.setStyle(nextStyle);
         setMusicStyle((style) => (style === nextStyle ? style : nextStyle));
       }
       const nextEnabled = data.enabled;
@@ -155,10 +172,14 @@ export default function StickmanWidget() {
 
   const selectStyle = (style: MusicStyle) => {
     setMusicStyle(style);
-    window.postMessage(
-      { type: KEYJAM_COMMAND, version: 1, command: "setStyle", style },
-      "*",
-    );
+    typingMusic.setStyle(style);
+    void chrome.storage.sync.set({ [STYLE_STORAGE_KEY]: style }).catch(() => {});
+    if (keyJamConnected) {
+      window.postMessage(
+        { type: KEYJAM_COMMAND, version: 1, command: "setStyle", style },
+        "*",
+      );
+    }
   };
 
   if (keyJamConnected && !pageEnabled) return null;
@@ -190,27 +211,27 @@ export default function StickmanWidget() {
       }}
     >
       {hasRiv ? <RiveStickman state={state} /> : <FallbackStickman state={state} />}
-      {keyJamConnected ? (
-        <div className="maestro-style-bubble" role="dialog" aria-label="选择 KeyJam 风格">
-          <div className="bubble-title">你想要我弹什么类型的歌？</div>
-          <div className="bubble-actions">
-            {(Object.keys(STYLE_LABELS) as MusicStyle[]).map((style) => (
-              <button
-                key={style}
-                type="button"
-                className="bubble-style-button"
-                data-active={musicStyle === style ? "true" : "false"}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  selectStyle(style);
-                }}
-              >
-                {STYLE_LABELS[style]}
-              </button>
-            ))}
-          </div>
+      <div className="maestro-style-bubble" role="dialog" aria-label="选择 Maestro 风格">
+        <div className="bubble-title">
+          {keyJamConnected ? "你想要我弹什么类型的歌？" : "你想让我弹什么风格？"}
         </div>
-      ) : null}
+        <div className="bubble-actions">
+          {(Object.keys(STYLE_LABELS) as MusicStyle[]).map((style) => (
+            <button
+              key={style}
+              type="button"
+              className="bubble-style-button"
+              data-active={musicStyle === style ? "true" : "false"}
+              onClick={(event) => {
+                event.stopPropagation();
+                selectStyle(style);
+              }}
+            >
+              {STYLE_LABELS[style]}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
