@@ -1,4 +1,4 @@
-# MuseKey / KeyJam
+# MuseKey 
 
 **打字即作曲。** MuseKey 是一个把键盘变成乐器的浏览器音乐实验：每一次敲击都会变成音符、节奏和画面反馈。网页端是可直接演奏的 KeyJam；Chrome 插件 Maestro Stickman 则把一个会弹琴的小人带到普通网页里，让写作、搜索、聊天也有音乐陪伴。
 
