@@ -102,6 +102,7 @@ export class TypingMusic {
   private lastPlayedAt = 0;
   private notesSinceRelease = 0;
   private style: MusicStyle = "lofi";
+  private toneContextReady = false;
 
   setStyle(style: MusicStyle): void {
     if (this.style === style) return;
@@ -114,6 +115,7 @@ export class TypingMusic {
     if (now - this.lastPlayedAt < MIN_GAP_MS) return;
     this.lastPlayedAt = now;
 
+    this.ensureToneContext();
     await Tone.start();
     const engine = this.engine ?? this.buildEngine();
 
@@ -126,6 +128,19 @@ export class TypingMusic {
     }
     const velocity = 0.7 + Math.random() * 0.3;
     engine.melody.triggerAttackRelease(note, STYLE_CONFIGS[this.style].noteLength, undefined, velocity);
+  }
+
+  private ensureToneContext(): void {
+    if (this.toneContextReady) return;
+    Tone.setContext(
+      new Tone.Context({
+        clockSource: "timeout",
+        latencyHint: "interactive",
+        lookAhead: 0.02,
+        updateInterval: 0.03,
+      }),
+    );
+    this.toneContextReady = true;
   }
 
   private rebuildEngine(): void {

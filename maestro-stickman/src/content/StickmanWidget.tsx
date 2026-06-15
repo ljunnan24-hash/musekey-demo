@@ -1,15 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useRive, useStateMachineInput } from "@rive-app/react-canvas";
 import { typingTracker } from "../logic/typingTracker";
 import { typingMusic, type MusicStyle } from "../logic/typingMusic";
-import {
-  characterState,
-  STATE_NUMBER,
-  type CharacterState,
-} from "../logic/characterState";
+import { characterState, type CharacterState } from "../logic/characterState";
 
-// .riv 的扩展内 URL（不存在时 fetch 会失败 → 自动走 fallback）
-const RIV_URL = chrome.runtime.getURL("maestro_stickman.riv");
 const KEYJAM_EVENT = "KEYJAM_MAESTRO_EVENT";
 const KEYJAM_ACK = "KEYJAM_MAESTRO_ACK";
 const KEYJAM_COMMAND = "MAESTRO_KEYJAM_COMMAND";
@@ -41,8 +34,6 @@ export default function StickmanWidget() {
   const [pageEnabled, setPageEnabled] = useState(true);
   const [musicStyle, setMusicStyle] = useState<MusicStyle>("lofi");
   const [musicHitPhase, setMusicHitPhase] = useState<0 | 1 | 2>(0);
-  // null = 检测中；true = 有 .riv 走 Rive；false = 走 SVG 占位
-  const [hasRiv, setHasRiv] = useState<boolean | null>(null);
   const musicHitTimer = useRef<number | null>(null);
   const frameUpdate = useRef<number | null>(null);
   const pendingMusicHit = useRef(false);
@@ -72,21 +63,6 @@ export default function StickmanWidget() {
       musicHitTimer.current = window.setTimeout(() => setMusicHitPhase(0), 150);
     });
   };
-
-  // 检测 .riv 是否存在（HEAD 请求；失败/不存在 → fallback）
-  useEffect(() => {
-    let cancelled = false;
-    fetch(RIV_URL, { method: "HEAD" })
-      .then((r) => {
-        if (!cancelled) setHasRiv(r.ok);
-      })
-      .catch(() => {
-        if (!cancelled) setHasRiv(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -210,7 +186,7 @@ export default function StickmanWidget() {
         boxShadow: "0 6px 24px rgba(0,0,0,0.35)",
       }}
     >
-      {hasRiv ? <RiveStickman state={state} /> : <FallbackStickman state={state} />}
+      <FallbackStickman state={state} />
       <div className="maestro-style-bubble" role="dialog" aria-label="选择 Maestro 风格">
         <div className="bubble-title">
           {keyJamConnected ? "你想要我弹什么类型的歌？" : "你想让我弹什么风格？"}
@@ -234,25 +210,6 @@ export default function StickmanWidget() {
       </div>
     </div>
   );
-}
-
-/** Rive 渲染：rive 未就绪 / 加载失败时回退到占位小人 */
-function RiveStickman({ state }: { state: CharacterState }) {
-  const { rive, RiveComponent } = useRive({
-    src: RIV_URL,
-    artboard: "Stickman",
-    stateMachines: "StickmanMachine",
-    autoplay: true,
-  });
-  const stateInput = useStateMachineInput(rive, "StickmanMachine", "character_state");
-  const value = STATE_NUMBER[state];
-
-  useEffect(() => {
-    if (stateInput) stateInput.value = value;
-  }, [stateInput, value]);
-
-  if (!rive || !RiveComponent) return <FallbackStickman state={state} />;
-  return <RiveComponent style={{ width: "100%", height: "100%" }} />;
 }
 
 /** SVG 小钢琴家 fallback：表情 + 双手弹琴 + 睡觉/点击/烦躁状态。
