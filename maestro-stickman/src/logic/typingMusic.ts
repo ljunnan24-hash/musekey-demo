@@ -1,3 +1,5 @@
+import * as Tone from "tone";
+
 const MIN_GAP_MS = 48;
 const PENTA = ["C", "D", "E", "G", "A"] as const;
 const ROWS = [
@@ -6,21 +8,18 @@ const ROWS = [
   { keys: "zxcvbnm", baseOctave: 3 },
 ] as const;
 
-type AudioContextCtor = typeof AudioContext;
 export type MusicStyle = "lofi" | "edm" | "jazz" | "ambient";
-
-interface Envelope {
-  attack: number;
-  decay: number;
-  sustain: number;
-  release: number;
-}
 
 interface StyleConfig {
   bpm: number;
-  osc: OscillatorType;
-  env: Envelope;
-  volumeDb: number;
+  melodyOsc: "triangle" | "sawtooth" | "sine";
+  melodyEnv: {
+    attack: number;
+    decay: number;
+    sustain: number;
+    release: number;
+  };
+  melodyVol: number;
   delayTime: "8n." | "4n.";
   delayFB: number;
   delayWet: number;
@@ -29,59 +28,47 @@ interface StyleConfig {
 const STYLE_CONFIGS: Record<MusicStyle, StyleConfig> = {
   lofi: {
     bpm: 78,
-    osc: "triangle",
-    env: { attack: 0.005, decay: 0.4, sustain: 0.15, release: 1.2 },
-    volumeDb: -6,
+    melodyOsc: "triangle",
+    melodyEnv: { attack: 0.005, decay: 0.4, sustain: 0.15, release: 1.2 },
+    melodyVol: -6,
     delayTime: "8n.",
     delayFB: 0.28,
     delayWet: 0.25,
   },
   edm: {
     bpm: 128,
-    osc: "sawtooth",
-    env: { attack: 0.002, decay: 0.2, sustain: 0.3, release: 0.6 },
-    volumeDb: -4,
+    melodyOsc: "sawtooth",
+    melodyEnv: { attack: 0.002, decay: 0.2, sustain: 0.3, release: 0.6 },
+    melodyVol: -4,
     delayTime: "8n.",
     delayFB: 0.15,
     delayWet: 0.15,
   },
   jazz: {
     bpm: 100,
-    osc: "triangle",
-    env: { attack: 0.01, decay: 0.3, sustain: 0.2, release: 0.8 },
-    volumeDb: -8,
+    melodyOsc: "triangle",
+    melodyEnv: { attack: 0.01, decay: 0.3, sustain: 0.2, release: 0.8 },
+    melodyVol: -8,
     delayTime: "8n.",
     delayFB: 0.2,
     delayWet: 0.18,
   },
   ambient: {
     bpm: 60,
-    osc: "sine",
-    env: { attack: 0.2, decay: 0.5, sustain: 0.3, release: 2.5 },
-    volumeDb: -10,
+    melodyOsc: "sine",
+    melodyEnv: { attack: 0.2, decay: 0.5, sustain: 0.3, release: 2.5 },
+    melodyVol: -10,
     delayTime: "4n.",
     delayFB: 0.35,
     delayWet: 0.3,
   },
 };
 
-const NOTE_OFFSET: Record<string, number> = {
-  C: 0,
-  D: 2,
-  E: 4,
-  F: 5,
-  G: 7,
-  A: 9,
-  B: 11,
-};
-
-function getAudioContextCtor(): AudioContextCtor | null {
-  const win = window as typeof window & { webkitAudioContext?: AudioContextCtor };
-  return window.AudioContext ?? win.webkitAudioContext ?? null;
-}
-
-function dbToGain(db: number): number {
-  return 10 ** (db / 20);
+interface Engine {
+  dryGain: Tone.Gain;
+  delay: Tone.FeedbackDelay;
+  ambienceGain: Tone.Gain;
+  melody: Tone.PolySynth<Tone.Synth>;
 }
 
 function pentaNote(index: number, baseOctave: number): string {
@@ -89,25 +76,13 @@ function pentaNote(index: number, baseOctave: number): string {
   return PENTA[((index % PENTA.length) + PENTA.length) % PENTA.length] + octave;
 }
 
-function noteToFrequency(note: string): number {
-  const match = /^([A-G])(#?)(-?\d+)$/.exec(note);
-  if (!match) return 261.63;
-  const [, name, sharp, octave] = match;
-  const midi = (Number(octave) + 1) * 12 + NOTE_OFFSET[name] + (sharp ? 1 : 0);
-  return 440 * 2 ** ((midi - 69) / 12);
-}
-
-function keyToFrequency(key: string): number | null {
+function keyToNote(key: string): string | null {
   const lower = key.toLowerCase();
   for (const row of ROWS) {
     const index = row.keys.indexOf(lower);
-    if (index >= 0) return noteToFrequency(pentaNote(index, row.baseOctave));
+    if (index >= 0) return pentaNote(index, row.baseOctave);
   }
   return null;
-}
-
-function noteDurationSeconds(config: StyleConfig): number {
-  return 60 / config.bpm / 2;
 }
 
 function delaySeconds(config: StyleConfig): number {
@@ -116,87 +91,68 @@ function delaySeconds(config: StyleConfig): number {
 }
 
 export class TypingMusic {
-  private ctx: AudioContext | null = null;
-  private delay: DelayNode | null = null;
-  private feedback: GainNode | null = null;
-  private wet: GainNode | null = null;
+  private engine: Engine | null = null;
   private step = 0;
   private lastPlayedAt = 0;
   private style: MusicStyle = "lofi";
 
   setStyle(style: MusicStyle): void {
+    if (this.style === style) return;
     this.style = style;
     this.step = 0;
-    this.configureDelay();
+    this.rebuildEngine();
   }
 
   async play(key = "", now = performance.now()): Promise<void> {
     if (now - this.lastPlayedAt < MIN_GAP_MS) return;
     this.lastPlayedAt = now;
 
-    const AudioContextClass = getAudioContextCtor();
-    if (!AudioContextClass) return;
+    await Tone.start();
+    const engine = this.engine ?? this.buildEngine();
 
-    this.ctx ??= new AudioContextClass({ latencyHint: "interactive" });
-    if (this.ctx.state === "suspended") {
-      await this.ctx.resume();
-    }
-    this.configureDelay();
-
-    const config = STYLE_CONFIGS[this.style];
-    const fallbackIndex = this.step % PENTA.length;
-    const fallbackOctave = this.step % 5 === 4 ? 3 : 4;
-    const freq = keyToFrequency(key) ?? noteToFrequency(pentaNote(fallbackIndex, fallbackOctave));
+    const note = keyToNote(key) ?? pentaNote(this.step % PENTA.length, this.step % 5 === 4 ? 3 : 4);
     this.step = (this.step + 1) % 64;
-
-    const start = this.ctx.currentTime;
-    const duration = noteDurationSeconds(config);
-    const releaseStart = start + duration;
-    const end = releaseStart + config.env.release;
-    const peak = dbToGain(config.volumeDb) * 0.18;
-    const sustain = Math.max(0.0001, peak * config.env.sustain);
-
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = config.osc;
-    osc.frequency.setValueAtTime(freq, start);
-
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(peak, start + config.env.attack);
-    gain.gain.exponentialRampToValueAtTime(sustain, start + config.env.attack + config.env.decay);
-    gain.gain.setValueAtTime(sustain, releaseStart);
-    gain.gain.exponentialRampToValueAtTime(0.0001, end);
-
-    osc.connect(gain);
-    gain.connect(this.ctx.destination);
-    if (this.delay) gain.connect(this.delay);
-
-    osc.start(start);
-    osc.stop(end + 0.02);
-    osc.onended = () => {
-      osc.disconnect();
-      gain.disconnect();
-    };
+    const velocity = 0.7 + Math.random() * 0.3;
+    engine.melody.triggerAttackRelease(note, "8n", undefined, velocity);
   }
 
-  private configureDelay(): void {
-    if (!this.ctx) return;
+  private rebuildEngine(): void {
+    if (!this.engine) return;
+    this.disposeEngine();
+    this.buildEngine();
+  }
+
+  private buildEngine(): Engine {
     const config = STYLE_CONFIGS[this.style];
 
-    if (!this.delay || !this.feedback || !this.wet) {
-      this.delay = this.ctx.createDelay(2);
-      this.feedback = this.ctx.createGain();
-      this.wet = this.ctx.createGain();
-      this.delay.connect(this.feedback);
-      this.feedback.connect(this.delay);
-      this.delay.connect(this.wet);
-      this.wet.connect(this.ctx.destination);
-    }
+    const dryGain = new Tone.Gain(config.melodyVol > -8 ? 0.65 : 0.75).toDestination();
+    const ambienceGain = new Tone.Gain(0.55).toDestination();
+    const delay = new Tone.FeedbackDelay(delaySeconds(config), config.delayFB);
+    delay.wet.value = config.delayWet;
+    delay.connect(ambienceGain);
 
-    const time = this.ctx.currentTime;
-    this.delay.delayTime.setTargetAtTime(delaySeconds(config), time, 0.01);
-    this.feedback.gain.setTargetAtTime(config.delayFB, time, 0.01);
-    this.wet.gain.setTargetAtTime(config.delayWet * 0.22, time, 0.01);
+    const melody = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: config.melodyOsc as "triangle" | "sawtooth" | "sine" },
+      envelope: config.melodyEnv,
+      volume: config.melodyVol,
+    });
+    melody.connect(dryGain);
+    melody.connect(delay);
+
+    this.engine = { dryGain, delay, ambienceGain, melody };
+    return this.engine;
+  }
+
+  private disposeEngine(): void {
+    if (!this.engine) return;
+    for (const node of Object.values(this.engine)) {
+      try {
+        node.dispose();
+      } catch {
+        // Best-effort cleanup; a stale audio node should not break typing.
+      }
+    }
+    this.engine = null;
   }
 }
 

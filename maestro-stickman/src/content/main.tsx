@@ -39,6 +39,11 @@ function allowsTypingSound(target: EventTarget | null): boolean {
   return true;
 }
 
+function hasBrowserAudio(): boolean {
+  const win = window as typeof window & { webkitAudioContext?: typeof AudioContext };
+  return typeof window.AudioContext === "function" || typeof win.webkitAudioContext === "function";
+}
+
 if (!win.__maestroStickmanInjected && !isKeyJamPage()) {
   win.__maestroStickmanInjected = true;
 
@@ -157,7 +162,7 @@ if (!win.__maestroStickmanInjected && !isKeyJamPage()) {
       if (!isTypingTarget(e.target)) return;
       typingTracker.record();
       window.dispatchEvent(new CustomEvent(TYPING_PULSE_EVENT));
-      if (!e.repeat && allowsTypingSound(e.target)) {
+      if (!e.repeat && allowsTypingSound(e.target) && hasBrowserAudio()) {
         void typingMusic.play(e.key);
       }
     },
