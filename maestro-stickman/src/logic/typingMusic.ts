@@ -138,6 +138,7 @@ export class TypingMusic {
   private localAudio: HTMLAudioElement | null = null;
   private localAudioLoaded = false;
   private localAudioEnabled = false;
+  private localAudioConfigured = false;
   private localQuietTimer: number | null = null;
   private step = 0;
   private lastPlayedAt = 0;
@@ -165,14 +166,15 @@ export class TypingMusic {
     this.localAudio = null;
     this.localAudioLoaded = false;
     this.localAudioEnabled = false;
+    this.localAudioConfigured = false;
   }
 
   async play(key = "", level: TypingLevel = "slow", now = performance.now()): Promise<void> {
     if (now - this.lastPlayedAt < MIN_GAP_MS) return;
     this.lastPlayedAt = now;
 
-    const localBackingStarted = await this.ensureLocalAudio(level);
-    if (localBackingStarted) return;
+    const localBackingHandled = await this.ensureLocalAudio(level);
+    if (localBackingHandled) return;
 
     const engine = this.engine ?? this.buildEngine();
     if (!engine) return;
@@ -189,7 +191,8 @@ export class TypingMusic {
     if (!this.localAudioLoaded) {
       await this.loadLocalAudio();
     }
-    if (!this.localAudio || !this.localAudioEnabled) return false;
+    if (!this.localAudioConfigured) return false;
+    if (!this.localAudio || !this.localAudioEnabled) return true;
 
     this.localAudio.volume = volumeForLevel(level);
     if (this.localQuietTimer) window.clearTimeout(this.localQuietTimer);
@@ -199,7 +202,7 @@ export class TypingMusic {
     if (this.localAudio.paused) {
       await this.localAudio.play().catch(() => {});
     }
-    return !this.localAudio.paused;
+    return true;
   }
 
   private async loadLocalAudio(): Promise<void> {
@@ -209,6 +212,7 @@ export class TypingMusic {
       .catch(() => ({}))) as Record<string, unknown>;
     const settings = got[LOCAL_AUDIO_STORAGE_KEY] as LocalAudioSettings | undefined;
     if (!settings?.enabled || !settings.dataUrl) {
+      this.localAudioConfigured = !!settings?.enabled && !!settings?.dataUrl;
       this.localAudioEnabled = false;
       this.localAudio = null;
       return;
@@ -218,7 +222,9 @@ export class TypingMusic {
     audio.loop = true;
     audio.preload = "auto";
     audio.volume = 0.18;
+    audio.load();
     this.localAudio = audio;
+    this.localAudioConfigured = true;
     this.localAudioEnabled = true;
   }
 

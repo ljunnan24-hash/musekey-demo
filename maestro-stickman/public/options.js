@@ -25,6 +25,7 @@ const els = {
   localAudioEnabled: $("localAudioEnabled"),
   localAudioFile: $("localAudioFile"),
   localAudioStatus: $("localAudioStatus"),
+  previewLocalAudio: $("previewLocalAudio"),
   clearLocalAudio: $("clearLocalAudio"),
   blocklist: $("blocklist"),
   reset: $("reset"),
@@ -86,6 +87,7 @@ function renderLocalAudio(settings) {
   const hasAudio = !!settings?.dataUrl;
   els.localAudioEnabled.checked = !!settings?.enabled && hasAudio;
   els.localAudioEnabled.disabled = !hasAudio;
+  els.previewLocalAudio.disabled = !hasAudio;
   els.clearLocalAudio.disabled = !hasAudio;
   els.localAudioStatus.textContent = hasAudio
     ? `${settings.name || "已导入音频"} · ${settings.enabled ? "已启用" : "已停用"}`
@@ -108,6 +110,13 @@ function storeLocalAudio(settings, done = flashSaved) {
     renderLocalAudio(settings);
     done();
   });
+}
+
+let previewAudio = null;
+function stopPreview() {
+  if (!previewAudio) return;
+  previewAudio.pause();
+  previewAudio = null;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -167,7 +176,25 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  els.previewLocalAudio.addEventListener("click", () => {
+    chrome.storage.local.get([AUDIO_STORAGE_KEY], (res) => {
+      const current = res[AUDIO_STORAGE_KEY];
+      if (!current?.dataUrl) {
+        renderLocalAudio(null);
+        return;
+      }
+      stopPreview();
+      previewAudio = new Audio(current.dataUrl);
+      previewAudio.volume = 0.45;
+      previewAudio.play().catch(() => {
+        els.localAudioStatus.textContent = "试听失败，请换一个音频文件";
+      });
+      setTimeout(stopPreview, 8000);
+    });
+  });
+
   els.clearLocalAudio.addEventListener("click", () => {
+    stopPreview();
     chrome.storage.local.remove([AUDIO_STORAGE_KEY], () => {
       renderLocalAudio(null);
       flashSaved();
