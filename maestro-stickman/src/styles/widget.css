@@ -172,15 +172,15 @@
   top: 8px;
   right: 8px;
   z-index: 3;
-  width: 22px;
-  height: 22px;
+  width: 38px;
+  height: 24px;
   border: 1px solid rgba(255, 143, 171, 0.42);
-  border-radius: 50%;
+  border-radius: 999px;
   background: rgba(20, 18, 28, 0.78);
   color: #ffe1ec;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.24);
   cursor: pointer;
-  font: 800 13px/1 -apple-system, "PingFang SC", system-ui, sans-serif;
+  font: 800 11px/1 -apple-system, "PingFang SC", system-ui, sans-serif;
   letter-spacing: 0;
 }
 
@@ -233,26 +233,10 @@
 }
 
 .bubble-title {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  justify-content: center;
   font: 700 10px/1.25 -apple-system, "PingFang SC", system-ui, sans-serif;
   text-align: center;
   letter-spacing: 0;
   margin-bottom: 7px;
-}
-
-.bubble-mark {
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  color: #1b1728;
-  background: #ff8fab;
-  font-size: 11px;
 }
 
 .bubble-actions {

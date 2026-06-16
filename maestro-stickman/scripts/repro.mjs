@@ -31,6 +31,21 @@ window.chrome = {
         return Promise.resolve();
       },
     },
+    local: {
+      get: (keys) => {
+        const out = {};
+        for (const k of keys) if (k in memStore) out[k] = memStore[k];
+        return Promise.resolve(out);
+      },
+      set: (obj) => {
+        Object.assign(memStore, obj);
+        return Promise.resolve();
+      },
+      remove: (keys) => {
+        for (const k of keys) delete memStore[k];
+        return Promise.resolve();
+      },
+    },
     onChanged: { addListener() {}, removeListener() {} },
   },
 };

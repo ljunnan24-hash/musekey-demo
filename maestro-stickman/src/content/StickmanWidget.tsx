@@ -214,11 +214,10 @@ export default function StickmanWidget() {
           setBubbleOpen((open) => !open);
         }}
       >
-        ?
+        曲风
       </button>
       <div className="maestro-style-bubble" role="dialog" aria-label="选择 Maestro 风格">
         <div className="bubble-title">
-          <span className="bubble-mark">?</span>
           <span>{keyJamConnected ? "你想要我弹什么类型的歌？" : "你想让我弹什么风格？"}</span>
         </div>
         <div className="bubble-actions">

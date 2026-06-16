@@ -1,7 +1,7 @@
 import { createRoot, type Root } from "react-dom/client";
 import StickmanWidget from "./StickmanWidget";
 import { typingTracker, isTypingTarget } from "../logic/typingTracker";
-import { typingMusic } from "../logic/typingMusic";
+import { LOCAL_AUDIO_STORAGE_KEY, typingMusic } from "../logic/typingMusic";
 import widgetCss from "../styles/widget.css?inline";
 import {
   loadSettings,
@@ -141,6 +141,7 @@ if (!win.__maestroStickmanInjected && !isKeyJamPage()) {
   // 先加载设置再决定是否挂载——避免在「已禁用 / 被 block」的页面闪现一帧。
   const init = async () => {
     current = await loadSettings();
+    typingMusic.preloadLocalAudio();
     if (shouldBeVisible(current)) mountWidget();
     subscribe(handleSettingsChange);
   };
@@ -160,12 +161,21 @@ if (!win.__maestroStickmanInjected && !isKeyJamPage()) {
     "keydown",
     (e) => {
       if (!isTypingTarget(e.target)) return;
-      typingTracker.record();
+      const now = Date.now();
+      typingTracker.record(now);
+      const level = typingTracker.level(now);
       window.dispatchEvent(new CustomEvent(TYPING_PULSE_EVENT));
       if (!e.repeat && allowsTypingSound(e.target) && hasBrowserAudio()) {
-        void typingMusic.play(e.key);
+        void typingMusic.play(e.key, level);
       }
     },
     true,
   );
+
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local" && LOCAL_AUDIO_STORAGE_KEY in changes) {
+      typingMusic.resetLocalAudio();
+      typingMusic.preloadLocalAudio();
+    }
+  });
 }

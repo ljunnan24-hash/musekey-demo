@@ -99,6 +99,26 @@
         padding: 6px 8px;
         font: inherit;
       }
+      input[type="file"] {
+        max-width: 210px;
+        color: var(--muted);
+        font: 12px/1.4 -apple-system, "PingFang SC", system-ui, sans-serif;
+      }
+      input[type="file"]::file-selector-button {
+        background: rgba(255, 143, 171, 0.12);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 7px 10px;
+        margin-right: 8px;
+        font: inherit;
+        cursor: pointer;
+      }
+      input[type="file"]::file-selector-button:hover {
+        color: #1b1728;
+        background: var(--pink);
+        border-color: var(--pink);
+      }
       output {
         color: var(--pink);
         font-variant-numeric: tabular-nums;
@@ -128,6 +148,10 @@
         cursor: pointer;
       }
       button:hover { color: var(--pink); border-color: var(--pink); }
+      .secondary {
+        padding: 7px 10px;
+        white-space: nowrap;
+      }
       .saved {
         color: var(--pink);
         font-size: 12px;
@@ -202,6 +226,29 @@
         <div class="ctrl">
           <input type="range" id="opacity" min="0.1" max="1" step="0.05" />
           <output id="opacityOut">100%</output>
+        </div>
+      </div>
+
+      <div class="block">
+        <label for="localAudioFile">本地背景音乐</label>
+        <div class="hint" style="margin-bottom: 10px">
+          导入本机音频后，小人不再播放合成音；打字越快，背景音乐音量越大。
+        </div>
+        <div class="row" style="border-top: none; padding: 0 0 10px">
+          <div>
+            <label for="localAudioEnabled">启用本地音乐</label>
+            <div class="hint" id="localAudioStatus">尚未导入音频</div>
+          </div>
+          <div class="ctrl">
+            <label class="switch">
+              <input type="checkbox" id="localAudioEnabled" />
+              <span class="track"></span><span class="knob"></span>
+            </label>
+          </div>
+        </div>
+        <div class="row" style="border-top: none; padding: 0">
+          <input id="localAudioFile" type="file" accept="audio/*" />
+          <button class="secondary" id="clearLocalAudio" type="button">清除音乐</button>
         </div>
       </div>
 

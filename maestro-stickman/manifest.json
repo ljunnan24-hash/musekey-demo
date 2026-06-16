@@ -3,7 +3,7 @@
   "name": "Maestro Stickman",
   "version": "0.1.0",
   "description": "A floating stickman musician that reacts to your typing. Works without any remote services.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html",

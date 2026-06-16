@@ -1,4 +1,7 @@
+import type { TypingLevel } from "./typingTracker";
+
 const MIN_GAP_MS = 48;
+export const LOCAL_AUDIO_STORAGE_KEY = "maestro_stickman_local_audio_v1";
 const PENTA = ["C", "D", "E", "G", "A"] as const;
 const ROWS = [
   { keys: "qwertyuiop", baseOctave: 5 },
@@ -11,8 +14,6 @@ export type MusicStyle = "lofi" | "edm" | "jazz" | "ambient";
 interface StyleConfig {
   bpm: number;
   oscillator: OscillatorType;
-  backgroundOscillator: OscillatorType;
-  backgroundChords: string[][];
   envelope: {
     attack: number;
     decay: number;
@@ -20,10 +21,15 @@ interface StyleConfig {
     release: number;
   };
   gain: number;
-  backgroundGain: number;
   delayFeedback: number;
   delayWet: number;
   noteLength: number;
+}
+
+interface LocalAudioSettings {
+  enabled?: boolean;
+  name?: string;
+  dataUrl?: string;
 }
 
 interface Voice {
@@ -37,23 +43,14 @@ interface Engine {
   delay: DelayNode;
   delayFeedback: GainNode;
   delayWet: GainNode;
-  background: GainNode;
 }
 
 const STYLE_CONFIGS: Record<MusicStyle, StyleConfig> = {
   lofi: {
     bpm: 78,
     oscillator: "triangle",
-    backgroundOscillator: "sine",
-    backgroundChords: [
-      ["C3", "E3", "G3", "B3"],
-      ["A2", "C3", "E3", "G3"],
-      ["F2", "A2", "C3", "E3"],
-      ["G2", "B2", "D3", "F3"],
-    ],
     envelope: { attack: 0.006, decay: 0.18, sustain: 0.08, release: 0.22 },
-    gain: 0.16,
-    backgroundGain: 0.018,
+    gain: 0.09,
     delayFeedback: 0.08,
     delayWet: 0.08,
     noteLength: 0.16,
@@ -61,16 +58,8 @@ const STYLE_CONFIGS: Record<MusicStyle, StyleConfig> = {
   edm: {
     bpm: 128,
     oscillator: "sawtooth",
-    backgroundOscillator: "sawtooth",
-    backgroundChords: [
-      ["A2", "C3", "E3"],
-      ["F2", "A2", "C3"],
-      ["C3", "E3", "G3"],
-      ["G2", "B2", "D3"],
-    ],
     envelope: { attack: 0.003, decay: 0.08, sustain: 0.12, release: 0.11 },
-    gain: 0.11,
-    backgroundGain: 0.012,
+    gain: 0.07,
     delayFeedback: 0.05,
     delayWet: 0.06,
     noteLength: 0.09,
@@ -78,16 +67,8 @@ const STYLE_CONFIGS: Record<MusicStyle, StyleConfig> = {
   jazz: {
     bpm: 100,
     oscillator: "triangle",
-    backgroundOscillator: "triangle",
-    backgroundChords: [
-      ["D3", "F3", "A3", "C4"],
-      ["G2", "B2", "D3", "F3"],
-      ["C3", "E3", "G3", "B3"],
-      ["A2", "C#3", "E3", "G3"],
-    ],
     envelope: { attack: 0.012, decay: 0.16, sustain: 0.1, release: 0.2 },
-    gain: 0.15,
-    backgroundGain: 0.015,
+    gain: 0.085,
     delayFeedback: 0.06,
     delayWet: 0.07,
     noteLength: 0.14,
@@ -95,16 +76,8 @@ const STYLE_CONFIGS: Record<MusicStyle, StyleConfig> = {
   ambient: {
     bpm: 60,
     oscillator: "sine",
-    backgroundOscillator: "sine",
-    backgroundChords: [
-      ["C3", "E3", "G3", "B3"],
-      ["E3", "G3", "B3", "D4"],
-      ["A2", "C3", "E3", "G3"],
-      ["F2", "A2", "C3", "E3"],
-    ],
     envelope: { attack: 0.04, decay: 0.24, sustain: 0.18, release: 0.42 },
-    gain: 0.1,
-    backgroundGain: 0.014,
+    gain: 0.065,
     delayFeedback: 0.1,
     delayWet: 0.1,
     noteLength: 0.24,
@@ -162,8 +135,10 @@ function getAudioContext(): typeof AudioContext | null {
 export class TypingMusic {
   private engine: Engine | null = null;
   private activeVoices = new Set<Voice>();
-  private backgroundTimer: number | null = null;
-  private backgroundStep = 0;
+  private localAudio: HTMLAudioElement | null = null;
+  private localAudioLoaded = false;
+  private localAudioEnabled = false;
+  private localQuietTimer: number | null = null;
   private step = 0;
   private lastPlayedAt = 0;
   private style: MusicStyle = "lofi";
@@ -175,69 +150,76 @@ export class TypingMusic {
     this.rebuildEngine();
   }
 
-  async play(key = "", now = performance.now()): Promise<void> {
+  preloadLocalAudio(): void {
+    if (!this.localAudioLoaded) {
+      void this.loadLocalAudio();
+    }
+  }
+
+  resetLocalAudio(): void {
+    if (this.localQuietTimer) {
+      window.clearTimeout(this.localQuietTimer);
+      this.localQuietTimer = null;
+    }
+    this.localAudio?.pause();
+    this.localAudio = null;
+    this.localAudioLoaded = false;
+    this.localAudioEnabled = false;
+  }
+
+  async play(key = "", level: TypingLevel = "slow", now = performance.now()): Promise<void> {
     if (now - this.lastPlayedAt < MIN_GAP_MS) return;
     this.lastPlayedAt = now;
+
+    const localBackingStarted = await this.ensureLocalAudio(level);
+    if (localBackingStarted) return;
 
     const engine = this.engine ?? this.buildEngine();
     if (!engine) return;
     if (engine.context.state === "suspended") {
       await engine.context.resume().catch(() => {});
     }
-    this.ensureBackground(engine);
 
     const note = keyToNote(key) ?? pentaNote(this.step % PENTA.length, this.step % 5 === 4 ? 3 : 4);
     this.step = (this.step + 1) % 64;
     this.playVoice(engine, note);
   }
 
-  private ensureBackground(engine: Engine): void {
-    if (this.backgroundTimer !== null) return;
-    this.playBackgroundChord(engine);
+  private async ensureLocalAudio(level: TypingLevel): Promise<boolean> {
+    if (!this.localAudioLoaded) {
+      await this.loadLocalAudio();
+    }
+    if (!this.localAudio || !this.localAudioEnabled) return false;
+
+    this.localAudio.volume = volumeForLevel(level);
+    if (this.localQuietTimer) window.clearTimeout(this.localQuietTimer);
+    this.localQuietTimer = window.setTimeout(() => {
+      if (this.localAudio) this.localAudio.volume = volumeForLevel("none");
+    }, 1300);
+    if (this.localAudio.paused) {
+      await this.localAudio.play().catch(() => {});
+    }
+    return !this.localAudio.paused;
   }
 
-  private playBackgroundChord(engine: Engine): void {
-    if (engine.context.state === "closed") return;
+  private async loadLocalAudio(): Promise<void> {
+    this.localAudioLoaded = true;
+    const got = (await chrome.storage.local
+      .get([LOCAL_AUDIO_STORAGE_KEY])
+      .catch(() => ({}))) as Record<string, unknown>;
+    const settings = got[LOCAL_AUDIO_STORAGE_KEY] as LocalAudioSettings | undefined;
+    if (!settings?.enabled || !settings.dataUrl) {
+      this.localAudioEnabled = false;
+      this.localAudio = null;
+      return;
+    }
 
-    const config = STYLE_CONFIGS[this.style];
-    const chord = config.backgroundChords[this.backgroundStep % config.backgroundChords.length];
-    const start = engine.context.currentTime;
-    const beat = 60 / config.bpm;
-    const duration = Math.max(0.45, beat * 1.8);
-    const end = start + duration;
-
-    this.backgroundStep = (this.backgroundStep + 1) % config.backgroundChords.length;
-    chord.forEach((note, index) => {
-      const oscillator = engine.context.createOscillator();
-      const gain = engine.context.createGain();
-      const voice: Voice = { oscillator, gain };
-      const voiceGain = config.backgroundGain / Math.sqrt(chord.length) / (index === 0 ? 1 : 1.25);
-
-      oscillator.type = config.backgroundOscillator;
-      oscillator.frequency.setValueAtTime(noteToFrequency(note), start);
-      oscillator.detune.setValueAtTime((index - 1.5) * 3, start);
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.linearRampToValueAtTime(voiceGain, start + 0.12);
-      gain.gain.setValueAtTime(voiceGain, end - 0.16);
-      gain.gain.exponentialRampToValueAtTime(0.0001, end);
-
-      oscillator.connect(gain);
-      gain.connect(engine.background);
-      oscillator.start(start);
-      oscillator.stop(end + 0.03);
-
-      this.activeVoices.add(voice);
-      oscillator.onended = () => {
-        gain.disconnect();
-        oscillator.disconnect();
-        this.activeVoices.delete(voice);
-      };
-    });
-
-    this.backgroundTimer = window.setTimeout(() => {
-      this.backgroundTimer = null;
-      if (this.engine === engine) this.playBackgroundChord(engine);
-    }, beat * 2 * 1000);
+    const audio = new Audio(settings.dataUrl);
+    audio.loop = true;
+    audio.preload = "auto";
+    audio.volume = 0.18;
+    this.localAudio = audio;
+    this.localAudioEnabled = true;
   }
 
   private playVoice(engine: Engine, note: string): void {
@@ -291,18 +273,15 @@ export class TypingMusic {
     const delay = context.createDelay(0.5);
     const delayFeedback = context.createGain();
     const delayWet = context.createGain();
-    const background = context.createGain();
 
     master.gain.value = 0.78;
-    background.gain.value = 1;
     master.connect(context.destination);
-    background.connect(context.destination);
     delay.connect(delayFeedback);
     delayFeedback.connect(delay);
     delay.connect(delayWet);
     delayWet.connect(context.destination);
 
-    this.engine = { context, master, delay, delayFeedback, delayWet, background };
+    this.engine = { context, master, delay, delayFeedback, delayWet };
     this.configureEngine(this.engine);
     return this.engine;
   }
@@ -313,6 +292,20 @@ export class TypingMusic {
     engine.delay.delayTime.setTargetAtTime(delaySeconds(config), now, 0.01);
     engine.delayFeedback.gain.setTargetAtTime(config.delayFeedback, now, 0.01);
     engine.delayWet.gain.setTargetAtTime(config.delayWet, now, 0.01);
+  }
+}
+
+function volumeForLevel(level: TypingLevel): number {
+  switch (level) {
+    case "fast":
+      return 0.78;
+    case "normal":
+      return 0.46;
+    case "slow":
+      return 0.22;
+    case "none":
+    default:
+      return 0.08;
   }
 }
 
