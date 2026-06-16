@@ -33,10 +33,12 @@ export default function StickmanWidget() {
   const [keyJamConnected, setKeyJamConnected] = useState(false);
   const [pageEnabled, setPageEnabled] = useState(true);
   const [musicStyle, setMusicStyle] = useState<MusicStyle>("lofi");
+  const [bubbleOpen, setBubbleOpen] = useState(false);
   const [musicHitPhase, setMusicHitPhase] = useState<0 | 1 | 2>(0);
   const musicHitTimer = useRef<number | null>(null);
   const frameUpdate = useRef<number | null>(null);
   const pendingMusicHit = useRef(false);
+  const bubbleTimer = useRef<number | null>(null);
 
   const refreshCharacterState = () => {
     const now = Date.now();
@@ -130,6 +132,7 @@ export default function StickmanWidget() {
       window.removeEventListener(TYPING_PULSE_EVENT, onTypingPulse);
       if (frameUpdate.current !== null) window.cancelAnimationFrame(frameUpdate.current);
       if (musicHitTimer.current) window.clearTimeout(musicHitTimer.current);
+      if (bubbleTimer.current) window.clearTimeout(bubbleTimer.current);
     };
   }, []);
 
@@ -144,6 +147,16 @@ export default function StickmanWidget() {
   const handleClick = () => {
     characterState.onClick();
     refreshCharacterState();
+  };
+
+  const openBubbleSoon = () => {
+    if (bubbleTimer.current) window.clearTimeout(bubbleTimer.current);
+    bubbleTimer.current = window.setTimeout(() => setBubbleOpen(true), 360);
+  };
+
+  const closeBubbleSoon = () => {
+    if (bubbleTimer.current) window.clearTimeout(bubbleTimer.current);
+    bubbleTimer.current = window.setTimeout(() => setBubbleOpen(false), 220);
   };
 
   const selectStyle = (style: MusicStyle) => {
@@ -168,10 +181,15 @@ export default function StickmanWidget() {
       data-keyjam-connected={keyJamConnected ? "true" : "false"}
       data-music-style={musicStyle}
       data-music-hit-phase={musicHitPhase}
+      data-bubble-open={bubbleOpen ? "true" : "false"}
       role="button"
       tabIndex={0}
       aria-label={`Maestro Stickman (${state})`}
       onClick={handleClick}
+      onMouseEnter={openBubbleSoon}
+      onMouseLeave={closeBubbleSoon}
+      onFocus={() => setBubbleOpen(true)}
+      onBlur={closeBubbleSoon}
       style={{
         width: "100%",
         height: "100%",
@@ -187,9 +205,21 @@ export default function StickmanWidget() {
       }}
     >
       <FallbackStickman state={state} />
+      <button
+        type="button"
+        className="maestro-question"
+        aria-label="和 Maestro 选择音乐风格"
+        onClick={(event) => {
+          event.stopPropagation();
+          setBubbleOpen((open) => !open);
+        }}
+      >
+        ?
+      </button>
       <div className="maestro-style-bubble" role="dialog" aria-label="选择 Maestro 风格">
         <div className="bubble-title">
-          {keyJamConnected ? "你想要我弹什么类型的歌？" : "你想让我弹什么风格？"}
+          <span className="bubble-mark">?</span>
+          <span>{keyJamConnected ? "你想要我弹什么类型的歌？" : "你想让我弹什么风格？"}</span>
         </div>
         <div className="bubble-actions">
           {(Object.keys(STYLE_LABELS) as MusicStyle[]).map((style) => (
